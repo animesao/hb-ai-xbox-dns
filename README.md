@@ -59,4 +59,4 @@ build.bat
 
 ## Лицензия
 
-Код распространяется по лицензии [MIT](LICENSE). Шрифты Unbounded и Manrope — по SIL Open Font License 1.1, тексты лицензий лежат в папке `res/`.
+Код распространяется по лицензии [MIT](LICENSE). Русский текст — [открытая лицензия по ст. 1286.1 ГК РФ](LICENSE.ru.md). Шрифты Unbounded и Manrope — по SIL Open Font License 1.1, тексты лицензий лежат в папке `res/`.
