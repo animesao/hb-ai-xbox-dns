@@ -1,10 +1,12 @@
-# HB AI · Xbox DNS
+# HB AI · Xbox DNS — Gemini, ElevenLabs, ChatGPT и Claude одной кнопкой
 
-Программа для Windows, которая одной кнопкой включает и выключает DNS сервиса [xbox-dns.ru](https://xbox-dns.ru/). Не нужно искать адреса и вручную менять настройки сети.
+Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 одной кнопкой включает Smart DNS сервиса [xbox-dns.ru](https://xbox-dns.ru/), и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
 
-<img src="docs/screenshot.png" width="360" alt="Окно программы">
+**[⬇ Скачать HB_AI_Xbox_DNS.exe](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe)** · 213 КБ · Windows 10/11 · бесплатно · открытый код
 
-Сделано в сообществе [«Нейросети и AI на практике»](https://vk.com/neiroseti_ai).
+<img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Xbox DNS: кнопка включения DNS, выбор адресов">
+
+Не нужно искать адреса DNS и вручную менять настройки сетевого адаптера. Сделано в сообществе [«Нейросети и AI на практике»](https://vk.com/neiroseti_ai).
 
 ## Что умеет
 
@@ -41,6 +43,32 @@ Clear-DnsClientCache
 
 Весь код лежит в одном файле: [XboxDns.cs](XboxDns.cs).
 
+## Частые вопросы
+
+**Gemini пишет, что недоступен в вашей стране. Поможет?**
+Да, это ровно тот случай. Мы проверили: адреса Gemini и Google AI Studio DNS xbox-dns.ru отправляет через свой сервер за границей, и сервис открывается.
+
+**ElevenLabs перекидывает на страницу «not available in your country»**
+Напрямую так и есть. С включённым DNS ElevenLabs открывается нормально, это мы тоже проверили.
+
+**Работают ли ChatGPT и Claude?**
+Да, их адреса DNS тоже отправляет через сервер сервиса. По данным xbox-dns.ru, так же открываются Xbox Live, PlayStation Network, Spotify, Twitch и JetBrains.
+
+**Это VPN?**
+Нет. VPN гонит через чужой сервер весь трафик. Здесь меняется только DNS, и через сервер сервиса идут только запросы к нужным сайтам, а всё остальное работает напрямую, на полной скорости.
+
+**Откроются ли Telegram, Instagram и другие сайты, заблокированные в России?**
+Нет. Сервис по требованиям законов РФ ресурсы, заблокированные в России, не открывает.
+
+**Это не вирус? Почему просит права администратора?**
+DNS в Windows меняется только с правами администратора, так же как если вписать адреса вручную в настройках сети. Программа не ставится в автозагрузку, сама никуда не подключается и данные не собирает. Весь код — один файл [XboxDns.cs](XboxDns.cs), его можно прочитать и собрать самому.
+
+**Как вернуть всё как было?**
+Нажмите кнопку ещё раз: программа вернёт автоматическое получение DNS от роутера или провайдера.
+
+**Как включить DNS xbox-dns.ru вручную, без программы?**
+Параметры → Сеть и Интернет → свойства подключения → Изменить назначение DNS-сервера → вписать `111.88.96.54` и `111.88.96.55`. Программа делает то же самое одной кнопкой и сразу для всех подключений.
+
 ## Сборка из исходников
 
 Отдельно ничего ставить не нужно: компилятор C# входит в .NET Framework 4, который есть в Windows 10 и 11. Запустите:
@@ -56,6 +84,10 @@ build.bat
 - Программа не связана с xbox-dns.ru. Адреса DNS взяты с сайта сервиса. Если они поменяются, их нужно обновить в `XboxDns.cs`.
 - Пользуйтесь сервисом по его правилам: они запрещают открывать через него ресурсы из реестра запрещённых в РФ.
 - Всё, что вы делаете с программой, вы делаете на свой риск.
+
+## In English
+
+**HB AI · Xbox DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets the [xbox-dns.ru](https://xbox-dns.ru/) DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 213 KB exe that runs two PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`). Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
 
 ## Лицензия
 
