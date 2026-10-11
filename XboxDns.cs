@@ -1,4 +1,4 @@
-// HB AI · Xbox DNS — переключатель DNS xbox-dns.ru в стиле сообщества «Нейросети и AI на практике».
+// HB AI · Smart DNS — переключатель Smart DNS (Comss.one, GeoHide, Astracat, xbox-dns.ru) в стиле сообщества «Нейросети и AI на практике».
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
 using System;
 using System.Diagnostics;
@@ -17,15 +17,28 @@ namespace HbAi.XboxDns
 {
     static class Dns
     {
-        // Адреса с https://xbox-dns.ru/ (проверены 29.09.2026): 0 — новые, 1 — старые, оба отвечают
-        public static readonly string[][] V4 = { new[] { "111.88.96.54", "111.88.96.55" }, new[] { "111.88.96.50", "111.88.96.51" } };
-        public static readonly string[] SetName = { "Новый", "Старый" };
-        public static readonly string[] V6 = { "2a00:ab00:1233:26::50", "2a00:ab00:1233:26::51" };
+        // Сервисы Smart DNS. Проверено 11.10.2026 из России: Comss.one, GeoHide и Astracat отдают прокси
+        // для ChatGPT, Claude, Gemini и ElevenLabs; xbox-dns.ru с 10.10.2026 нейросети не пропускает (0.0.0.0).
+        public static readonly string[] Name = { "Comss.one", "GeoHide", "Astracat", "Xbox DNS" };
+        public static readonly string[][] V4 = {
+            new[] { "83.220.169.155", "212.109.195.93" },
+            new[] { "159.194.200.33", "193.233.112.67" },
+            new[] { "135.106.217.200" },
+            new[] { "111.88.96.54", "111.88.96.55" } };
+        public static readonly string[][] V6 = {
+            new string[0], new string[0], new string[0],
+            new[] { "2a00:ab00:1233:26::50", "2a00:ab00:1233:26::51" } };
+        public static readonly string[] Opens = {
+            "ChatGPT, Claude, Gemini, ElevenLabs", "ChatGPT, Claude, Gemini, ElevenLabs",
+            "ChatGPT, Claude, Gemini, ElevenLabs", "только Xbox Live, нейросети — нет" };
+        public static readonly string[] Site = { "comss.ru", "geohide.ru", "astracat", "xbox-dns.ru" };
+        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://astracat2022.github.io/dns/", "https://xbox-dns.ru/" };
+        // Старые адреса xbox-dns.ru из версии 1.0: если стоят они, показываем Xbox DNS
+        static readonly string[] XboxOld = { "111.88.96.50", "111.88.96.51" };
 
         // -1 — DNS сервиса не стоит, иначе номер набора (IPv4 определяет набор)
         public static int ActiveSet()
         {
-            bool v6 = false;
             foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (ni.OperationalStatus != OperationalStatus.Up || ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
@@ -33,16 +46,16 @@ namespace HbAi.XboxDns
                 foreach (var ip in ni.GetIPProperties().DnsAddresses)
                 {
                     string s = ip.ToString().Split('%')[0].ToLowerInvariant();
-                    for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s)) return k;
-                    if (V6.Contains(s)) v6 = true;
+                    for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
+                    if (XboxOld.Contains(s)) return 3;
                 }
             }
-            return v6 ? 0 : -1;
+            return -1;
         }
 
         public static string Enable(int set)
         {
-            string all = string.Join(",", V4[set].Concat(V6).Select(a => "'" + a + "'").ToArray());
+            string all = string.Join(",", V4[set].Concat(V6[set]).Select(a => "'" + a + "'").ToArray());
             return Run("$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ServerAddresses (" + all + ") }; Clear-DnsClientCache");
         }
 
@@ -86,14 +99,14 @@ namespace HbAi.XboxDns
         string error;
         float pulse;
         Rectangle rToggle, rClose, rSite, rGroup, rBrand, rVk;
-        readonly Rectangle[] rSeg = new Rectangle[2];
+        readonly Rectangle[] rSeg = new Rectangle[4];
         Point dragFrom;
         readonly System.Windows.Forms.Timer anim = new System.Windows.Forms.Timer();
 
         public MainForm()
         {
             LoadFonts();
-            Text = "HB AI · Xbox DNS";
+            Text = "HB AI · Smart DNS";
             ClientSize = new Size(440, 812);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
@@ -112,8 +125,8 @@ namespace HbAi.XboxDns
             int cur = Dns.ActiveSet();
             active = cur >= 0;
             dnsSet = cur >= 0 ? cur : 0;
-            rSeg[0] = new Rectangle(28, 500, (ClientSize.Width - 56) / 2, 56);
-            rSeg[1] = new Rectangle(28 + (ClientSize.Width - 56) / 2, 500, (ClientSize.Width - 56) / 2, 56);
+            int segW = (ClientSize.Width - 56) / 4;
+            for (int k = 0; k < 4; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
         }
@@ -173,7 +186,7 @@ namespace HbAi.XboxDns
             // плашка сверху
             using (var f = new Font(fBold, 11f, GraphicsUnit.Point))
             {
-                string pill = "Xbox DNS · xbox-dns.ru";
+                string pill = "Smart DNS · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
@@ -210,7 +223,7 @@ namespace HbAi.XboxDns
 
             // статус
             string status = busy ? "Применяем настройки…" : active ? "DNS включён" : "DNS выключен";
-            string sub = error != null ? error : busy ? "Секунду" : active ? Dns.SetName[dnsSet] + " DNS xbox-dns.ru" : "Обычный DNS от роутера или провайдера";
+            string sub = error != null ? error : busy ? "Секунду" : active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
             using (var f = new Font(fHead, 15f, GraphicsUnit.Point))
             using (var b = new SolidBrush(active && !busy ? Yellow : Color.White))
                 Centered(g, status, f, b, 420);
@@ -223,16 +236,15 @@ namespace HbAi.XboxDns
             using (var b = new SolidBrush(CardBg))
             using (var pen = new Pen(CardLine))
             { g.FillPath(b, path); g.DrawPath(pen, path); }
-            for (int k = 0; k < 2; k++)
+            for (int k = 0; k < 4; k++)
             {
                 var sr = new RectangleF(rSeg[k].X + 5, rSeg[k].Y + 5, rSeg[k].Width - 10, rSeg[k].Height - 10);
                 bool on = k == dnsSet;
                 if (on)
                     using (var path = RoundPath(sr, 12))
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
-                string a = Dns.V4[k][0], c = Dns.V4[k][1];
-                string label = Dns.SetName[k] + " · ." + a.Substring(a.LastIndexOf('.') + 1) + "/" + c.Substring(c.LastIndexOf('.') + 1);
-                using (var f = new Font(fBold, 10.5f, GraphicsUnit.Point))
+                string label = k == 3 ? "Xbox" : Dns.Name[k];
+                using (var f = new Font(fBold, 9.5f, GraphicsUnit.Point))
                 using (var b = new SolidBrush(on ? Color.FromArgb(11, 11, 16) : Soft))
                 using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                     g.DrawString(label, f, b, sr, sf);
@@ -249,10 +261,10 @@ namespace HbAi.XboxDns
             using (var bl = new SolidBrush(Violet))
             using (var bv = new SolidBrush(Color.FromArgb(233, 233, 242)))
             {
-                g.DrawString("IPv4", fl, bl, card.X + 20, card.Y + 16);
-                g.DrawString(Dns.V4[dnsSet][0] + "  /  " + Dns.V4[dnsSet][1], fv, bv, card.X + 76, card.Y + 14);
-                g.DrawString("IPv6", fl, bl, card.X + 20, card.Y + 48);
-                g.DrawString("2a00:ab00:1233:26::50 / 51", fv, bv, card.X + 76, card.Y + 46);
+                g.DrawString("DNS", fl, bl, card.X + 20, card.Y + 16);
+                g.DrawString(string.Join("  /  ", Dns.V4[dnsSet]), fv, bv, card.X + 76, card.Y + 14);
+                g.DrawString("Для", fl, bl, card.X + 20, card.Y + 48);
+                g.DrawString(Dns.Opens[dnsSet], fv, bv, card.X + 76, card.Y + 46);
             }
 
             // кнопка группы ВКонтакте
@@ -342,12 +354,12 @@ namespace HbAi.XboxDns
             if (e.Button != MouseButtons.Left) return;
             if (rClose.Contains(e.Location)) { Close(); return; }
             if (rGroup.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
-            if (rSite.Contains(e.Location)) { Open("https://xbox-dns.ru/"); return; }
+            if (rSite.Contains(e.Location)) { Open(Dns.Url[dnsSet]); return; }
             if (rBrand.Contains(e.Location) || rVk.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = e.X - c.X, dy = e.Y - c.Y;
             if (dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0) { Toggle(); return; }
-            for (int k = 0; k < 2; k++)
+            for (int k = 0; k < 4; k++)
                 if (rSeg[k].Contains(e.Location)) { PickSet(k); return; }
             dragFrom = e.Location;
         }
@@ -356,7 +368,7 @@ namespace HbAi.XboxDns
         {
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = e.X - c.X, dy = e.Y - c.Y;
-            bool hand = rClose.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg[0].Contains(e.Location) || rSeg[1].Contains(e.Location)
+            bool hand = rClose.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location))
                         || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
             Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
             if (e.Button == MouseButtons.Left && !hand)
