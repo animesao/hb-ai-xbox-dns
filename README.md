@@ -4,7 +4,14 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 
 > **Версия 1.1, 12 октября 2026.** С 10 октября xbox-dns.ru перестал пропускать нейросети: на запросы к ChatGPT, Claude, Gemini и ElevenLabs он отвечает `0.0.0.0`. Поэтому в версии 1.1 можно выбрать другой сервис: Comss.one, GeoHide или GeoHide Европа. Xbox DNS остался для Xbox Live. Такие сервисы бесплатные, и доступ через них то пропадает, то возвращается: если сайт не открывается, переключитесь на другой вариант. Мы проверяем их и обновляем список.
 
-**[⬇ Скачать HB_AI_Xbox_DNS.exe](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe)** · 213 КБ · Windows 10/11 · бесплатно · открытый код
+<a href="https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe"><img src="docs/download-button.png" width="480" alt="Скачать HB AI Smart DNS для Windows"></a>
+
+Нажмите на кнопку — файл скачается сразу. Дальше:
+1. Откройте скачанный `HB_AI_Xbox_DNS.exe`.
+2. Если Windows напишет «Windows защитила ваш компьютер», нажмите **Подробнее** → **Выполнить в любом случае**, а на вопрос о правах администратора — **Да**.
+3. Выберите сервис и нажмите большую кнопку в окне программы.
+
+Не скачивается по кнопке? [Вот прямая ссылка](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 214 КБ · Windows 10/11 · бесплатно · открытый код
 
 <img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
