@@ -1,4 +1,4 @@
-// HB AI · Smart DNS — переключатель Smart DNS (Comss.one, GeoHide, Astracat, xbox-dns.ru) в стиле сообщества «Нейросети и AI на практике».
+// HB AI · Smart DNS — переключатель Smart DNS (Comss.one, GeoHide, xbox-dns.ru) в стиле сообщества «Нейросети и AI на практике».
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
 using System;
 using System.Diagnostics;
@@ -17,13 +17,14 @@ namespace HbAi.XboxDns
 {
     static class Dns
     {
-        // Сервисы Smart DNS. Проверено 11.10.2026 из России: Comss.one, GeoHide и Astracat отдают прокси
-        // для ChatGPT, Claude, Gemini и ElevenLabs; xbox-dns.ru с 10.10.2026 нейросети не пропускает (0.0.0.0).
-        public static readonly string[] Name = { "Comss.one", "GeoHide", "Astracat", "Xbox DNS" };
+        // Сервисы Smart DNS. Проверено 12.10.2026 из России: Comss.one и GeoHide (Европа) отдают прокси для ChatGPT,
+        // Claude, Gemini и ElevenLabs, российский узел GeoHide — для Gemini и ElevenLabs. xbox-dns.ru с 10.10.2026
+        // нейросети не пропускает (0.0.0.0). Astracat (135.106.217.200) 12.10.2026 не отвечал, из списка убран.
+        public static readonly string[] Name = { "Comss.one", "GeoHide", "GeoHide EU", "Xbox DNS" };
         public static readonly string[][] V4 = {
             new[] { "83.220.169.155", "212.109.195.93" },
             new[] { "159.194.200.33", "193.233.112.67" },
-            new[] { "135.106.217.200" },
+            new[] { "143.20.64.192", "45.13.237.213" },
             new[] { "111.88.96.54", "111.88.96.55" } };
         public static readonly string[][] V6 = {
             new string[0], new string[0], new string[0],
@@ -31,8 +32,8 @@ namespace HbAi.XboxDns
         public static readonly string[] Opens = {
             "ChatGPT, Claude, Gemini, ElevenLabs", "ChatGPT, Claude, Gemini, ElevenLabs",
             "ChatGPT, Claude, Gemini, ElevenLabs", "только Xbox Live, нейросети — нет" };
-        public static readonly string[] Site = { "comss.ru", "geohide.ru", "astracat", "xbox-dns.ru" };
-        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://astracat2022.github.io/dns/", "https://xbox-dns.ru/" };
+        public static readonly string[] Site = { "comss.ru", "geohide.ru", "geohide.ru", "xbox-dns.ru" };
+        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://geohide.ru/", "https://xbox-dns.ru/" };
         // Старые адреса xbox-dns.ru из версии 1.0: если стоят они, показываем Xbox DNS
         static readonly string[] XboxOld = { "111.88.96.50", "111.88.96.51" };
 
@@ -243,7 +244,7 @@ namespace HbAi.XboxDns
                 if (on)
                     using (var path = RoundPath(sr, 12))
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
-                string label = k == 3 ? "Xbox" : Dns.Name[k];
+                string label = k == 3 ? "Xbox" : k == 2 ? "GeoHide EU" : Dns.Name[k];
                 using (var f = new Font(fBold, 9.5f, GraphicsUnit.Point))
                 using (var b = new SolidBrush(on ? Color.FromArgb(11, 11, 16) : Soft))
                 using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })

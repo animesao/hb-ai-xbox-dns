@@ -1,19 +1,27 @@
-# HB AI · Xbox DNS — Gemini, ElevenLabs, ChatGPT и Claude одной кнопкой
+# HB AI · Smart DNS — Gemini, ElevenLabs, ChatGPT и Claude одной кнопкой
 
-Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 одной кнопкой включает Smart DNS сервиса [xbox-dns.ru](https://xbox-dns.ru/), и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
+Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 одной кнопкой включает Smart DNS — [Comss.one](https://www.comss.ru/) или [GeoHide](https://geohide.ru/), — и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
 
-> **Внимание, 11 октября 2026.** С 10 октября xbox-dns.ru перестал пропускать нейросети: все его серверы на запросы к ChatGPT, Claude, Gemini и ElevenLabs отвечают `0.0.0.0`, так же отвечает и их зашифрованный DNS. Это решение сервиса, а не провайдера. Версия 1.0 этой программы поэтому нейросети больше не открывает: если она у вас включена, нажмите кнопку ещё раз, чтобы вернуть обычный DNS. Мы проверили другие сервисы: Comss.one, GeoHide и Astracat сейчас пропускают к нейросетям, и готовим версию 1.1 с выбором между ними.
+> **Версия 1.1, 12 октября 2026.** С 10 октября xbox-dns.ru перестал пропускать нейросети: на запросы к ChatGPT, Claude, Gemini и ElevenLabs он отвечает `0.0.0.0`. Поэтому в версии 1.1 можно выбрать другой сервис: Comss.one, GeoHide или GeoHide Европа. Xbox DNS остался для Xbox Live. Такие сервисы бесплатные, и доступ через них то пропадает, то возвращается: если сайт не открывается, переключитесь на другой вариант. Мы проверяем их и обновляем список.
 
 **[⬇ Скачать HB_AI_Xbox_DNS.exe](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe)** · 213 КБ · Windows 10/11 · бесплатно · открытый код
 
-<img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Xbox DNS: кнопка включения DNS, выбор адресов">
+<img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
 Не нужно искать адреса DNS и вручную менять настройки сетевого адаптера. Сделано в сообществе [«Нейросети и AI на практике»](https://vk.com/neiroseti_ai).
 
 ## Что умеет
 
-- Включает DNS xbox-dns.ru на всех активных сетевых подключениях, а выключает, возвращая обычный DNS от роутера или провайдера.
-- Даёт выбрать набор адресов: новый (`111.88.96.54 / 55`) или старый (`111.88.96.50 / 51`). IPv6 у обоих одинаковый: `2a00:ab00:1233:26::50 / 51`.
+- Включает Smart DNS на всех активных сетевых подключениях, а выключает, возвращая обычный DNS от роутера или провайдера.
+- Даёт выбрать сервис:
+
+| Кнопка | Адреса | Что открывает (проверено 12.10.2026) |
+|---|---|---|
+| Comss.one | `83.220.169.155`, `212.109.195.93` | ChatGPT, Claude, Gemini, ElevenLabs |
+| GeoHide | `159.194.200.33`, `193.233.112.67` | Gemini, ElevenLabs; ChatGPT и Claude — через раз |
+| GeoHide EU | `143.20.64.192`, `45.13.237.213` | ChatGPT, Claude, Gemini, ElevenLabs |
+| Xbox | `111.88.96.54`, `111.88.96.55` | только Xbox Live, нейросети — нет |
+
 - При запуске показывает, что сейчас включено.
 - После каждого переключения очищает кэш DNS.
 
@@ -21,7 +29,7 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 
 1. Скачайте `HB_AI_Xbox_DNS.exe` в разделе [Releases](../../releases).
 2. Запустите и разрешите запуск от имени администратора: без этих прав Windows не даст поменять DNS.
-3. Выберите набор адресов и нажмите на большую кнопку.
+3. Выберите сервис и нажмите на большую кнопку. Если нужный сайт не открылся, выберите другой сервис: программа сразу переключит DNS.
 
 У файла нет цифровой подписи, поэтому Windows может показать «Неизвестный издатель». Сверить, что файл не подменили, можно по SHA-256: он указан в описании релиза.
 
@@ -37,7 +45,7 @@ certutil -hashfile HB_AI_Xbox_DNS.exe SHA256
 
 ```powershell
 # включить
-Set-DnsClientServerAddress -InterfaceIndex <адаптер> -ServerAddresses ('111.88.96.54','111.88.96.55','2a00:ab00:1233:26::50','2a00:ab00:1233:26::51')
+Set-DnsClientServerAddress -InterfaceIndex <адаптер> -ServerAddresses ('83.220.169.155','212.109.195.93')
 # выключить
 Set-DnsClientServerAddress -InterfaceIndex <адаптер> -ResetServerAddresses
 Clear-DnsClientCache
@@ -48,13 +56,13 @@ Clear-DnsClientCache
 ## Частые вопросы
 
 **Gemini пишет, что недоступен в вашей стране. Поможет?**
-Да, это ровно тот случай. Мы проверили: адреса Gemini и Google AI Studio DNS xbox-dns.ru отправляет через свой сервер за границей, и сервис открывается.
+Да, это ровно тот случай. Comss.one и GeoHide отправляют адреса Gemini и Google AI Studio через свой сервер за границей, и сервис открывается.
 
 **ElevenLabs перекидывает на страницу «not available in your country»**
 Напрямую так и есть. С включённым DNS ElevenLabs открывается нормально, это мы тоже проверили.
 
 **Работают ли ChatGPT и Claude?**
-Да, их адреса DNS тоже отправляет через сервер сервиса. По данным xbox-dns.ru, так же открываются Xbox Live, PlayStation Network, Spotify, Twitch и JetBrains.
+Через Comss.one и GeoHide Европа — да. Российский узел GeoHide пропускает их через раз. Если не открывается, переключитесь на другой сервис в программе.
 
 **Это VPN?**
 Нет. VPN гонит через чужой сервер весь трафик. Здесь меняется только DNS, и через сервер сервиса идут только запросы к нужным сайтам, а всё остальное работает напрямую, на полной скорости.
@@ -68,8 +76,11 @@ DNS в Windows меняется только с правами админист�
 **Как вернуть всё как было?**
 Нажмите кнопку ещё раз: программа вернёт автоматическое получение DNS от роутера или провайдера.
 
-**Как включить DNS xbox-dns.ru вручную, без программы?**
-Параметры → Сеть и Интернет → свойства подключения → Изменить назначение DNS-сервера → вписать `111.88.96.54` и `111.88.96.55`. Программа делает то же самое одной кнопкой и сразу для всех подключений.
+**Почему перестал работать Xbox DNS?**
+С 10 октября 2026 года xbox-dns.ru на запросы к нейросетям отвечает `0.0.0.0`, так же отвечает и его зашифрованный DNS. Это решение сервиса, а не провайдера. Для Xbox Live он по-прежнему работает.
+
+**Как включить Smart DNS вручную, без программы?**
+Параметры → Сеть и Интернет → свойства подключения → Изменить назначение DNS-сервера → вписать, например, `83.220.169.155` и `212.109.195.93` (Comss.one). Программа делает то же самое одной кнопкой и сразу для всех подключений.
 
 ## Сборка из исходников
 
@@ -83,13 +94,13 @@ build.bat
 
 ## Важно
 
-- Программа не связана с xbox-dns.ru. Адреса DNS взяты с сайта сервиса. Если они поменяются, их нужно обновить в `XboxDns.cs`.
-- Пользуйтесь сервисом по его правилам: они запрещают открывать через него ресурсы из реестра запрещённых в РФ.
+- Программа не связана с Comss.one, GeoHide и xbox-dns.ru. Это бесплатные сервисы: доступ через них может пропасть в любой момент. Адреса в программе мы проверяем скриптом `tools/probe_dns.py` и обновляем.
+- Пользуйтесь сервисами по их правилам. Ресурсы, заблокированные в России, программа не открывает.
 - Всё, что вы делаете с программой, вы делаете на свой риск.
 
 ## In English
 
-**HB AI · Xbox DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets the [xbox-dns.ru](https://xbox-dns.ru/) DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 213 KB exe that runs two PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`). Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
+**HB AI · Smart DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets Comss.one, GeoHide or xbox-dns.ru DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 213 KB exe that runs two PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`). Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
 
 ## Лицензия
 
