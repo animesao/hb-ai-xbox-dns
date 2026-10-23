@@ -1,4 +1,4 @@
-// HB AI · Smart DNS — переключатель Smart DNS (Comss.one, GeoHide, xbox-dns.ru) в стиле сообщества «Нейросети и AI на практике».
+// HB AI · Smart DNS 1.2 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, Astracat, xbox-dns.ru) со встроенной проверкой.
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
 using System;
 using System.Diagnostics;
@@ -17,25 +17,35 @@ namespace HbAi.XboxDns
 {
     static class Dns
     {
-        // Сервисы Smart DNS. Проверено 12.10.2026 из России: Comss.one и GeoHide (Европа) отдают прокси для ChatGPT,
-        // Claude, Gemini и ElevenLabs, российский узел GeoHide — для Gemini и ElevenLabs. xbox-dns.ru с 10.10.2026
-        // нейросети не пропускает (0.0.0.0). Astracat (135.106.217.200) 12.10.2026 не отвечал, из списка убран.
-        public static readonly string[] Name = { "Comss.one", "GeoHide", "GeoHide EU", "Xbox DNS" };
+        // Сервисы Smart DNS. Проверено 23.10.2026 из России (МГТС, Москва), tools/probe_dns.py:
+        // MagicDNS и Astracat открывают ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity; GeoHide Европа — то же;
+        // Comss.one — всё, кроме Gemini (прокси Comss упирается в капчу Google). Российские узлы GeoHide
+        // (159.194.200.33, 193.233.112.x) отвечают, но их прокси из России не открываются — убраны.
+        // xbox-dns.ru с 10.10.2026 на нейросети отвечает 0.0.0.0, оставлен только для Xbox Live.
+        public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Astracat", "Xbox DNS" };
+        public static readonly string[] Short = { "Comss", "GeoHide EU", "MagicDNS", "Astracat", "Xbox" };
         public static readonly string[][] V4 = {
             new[] { "83.220.169.155", "212.109.195.93" },
-            new[] { "159.194.200.33", "193.233.112.67" },
             new[] { "143.20.64.192", "45.13.237.213" },
+            new[] { "109.120.132.43", "94.249.177.102" },
+            new[] { "135.106.217.200" },
             new[] { "111.88.96.54", "111.88.96.55" } };
         public static readonly string[][] V6 = {
-            new string[0], new string[0], new string[0],
+            new string[0], new string[0], new string[0], new string[0],
             new[] { "2a00:ab00:1233:26::50", "2a00:ab00:1233:26::51" } };
         public static readonly string[] Opens = {
-            "ChatGPT, Claude, Gemini, ElevenLabs", "ChatGPT, Claude, Gemini, ElevenLabs",
-            "ChatGPT, Claude, Gemini, ElevenLabs", "только Xbox Live, нейросети — нет" };
-        public static readonly string[] Site = { "comss.ru", "geohide.ru", "geohide.ru", "xbox-dns.ru" };
-        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://geohide.ru/", "https://xbox-dns.ru/" };
-        // Старые адреса xbox-dns.ru из версии 1.0: если стоят они, показываем Xbox DNS
+            "ChatGPT, Claude, ElevenLabs, Grok; Gemini — через раз",
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
+            "только Xbox Live, нейросети — нет" };
+        public static readonly string[] Site = { "comss.ru", "geohide.ru", "magicdns.ru", "astracat", "xbox-dns.ru" };
+        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://magicdns.ru/", "https://astracat2022.github.io/dns/", "https://xbox-dns.ru/" };
+        public static int Count { get { return Name.Length; } }
+        public const int XboxSet = 4;
+        // Адреса из прежних версий: xbox-dns.ru 1.0 и российский узел GeoHide 1.1
         static readonly string[] XboxOld = { "111.88.96.50", "111.88.96.51" };
+        static readonly string[] GeoHideOld = { "159.194.200.33", "193.233.112.67" };
 
         // -1 — DNS сервиса не стоит, иначе номер набора (IPv4 определяет набор)
         public static int ActiveSet()
@@ -48,7 +58,8 @@ namespace HbAi.XboxDns
                 {
                     string s = ip.ToString().Split('%')[0].ToLowerInvariant();
                     for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
-                    if (XboxOld.Contains(s)) return 3;
+                    if (XboxOld.Contains(s)) return XboxSet;
+                    if (GeoHideOld.Contains(s)) return 1;
                 }
             }
             return -1;
@@ -83,6 +94,104 @@ namespace HbAi.XboxDns
         }
     }
 
+    // Проверка: спрашиваем DNS сервиса напрямую (UDP, порт 53), подключаемся к выданному адресу по TLS с именем
+    // сайта и смотрим ответ. Так видно, что получит человек, даже если DNS ещё не включён.
+    static class Probe
+    {
+        public static readonly string[] Host = { "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai" };
+        public static readonly string[] Label = { "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity" };
+        public const string Ok = "открывается", Blocked = "блок страны", Captcha = "капча Google", NoLink = "нет связи", NoDns = "DNS молчит", Zero = "не пускает";
+
+        public static string Resolve(string server, string host)
+        {
+            var q = new System.IO.MemoryStream();
+            var w = new System.IO.BinaryWriter(q);
+            w.Write(new byte[] { 0x2a, 0x2a, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
+            foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(System.Text.Encoding.ASCII.GetBytes(part)); }
+            w.Write(new byte[] { 0, 0, 1, 0, 1 });
+            byte[] r;
+            try
+            {
+                using (var u = new System.Net.Sockets.UdpClient())
+                {
+                    u.Client.ReceiveTimeout = 3000;
+                    var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(server), 53);
+                    var data = q.ToArray(); u.Send(data, data.Length, ep);
+                    r = u.Receive(ref ep);
+                }
+            }
+            catch { return null; }
+            try
+            {
+                int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], i = 12;
+                for (int n = 0; n < qd; n++) { while (r[i] != 0) i += r[i] + 1; i += 5; }
+                for (int n = 0; n < an; n++)
+                {
+                    if ((r[i] & 0xC0) == 0xC0) i += 2; else { while (r[i] != 0) i += r[i] + 1; i++; }
+                    int type = r[i] << 8 | r[i + 1]; int len = r[i + 8] << 8 | r[i + 9]; i += 10;
+                    if (type == 1) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
+                    i += len;
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        public static string Site(string host, string ip)
+        {
+            try
+            {
+                using (var tcp = new System.Net.Sockets.TcpClient())
+                {
+                    var ar = tcp.BeginConnect(ip, 443, null, null);
+                    if (!ar.AsyncWaitHandle.WaitOne(6000) || !tcp.Connected) return NoLink;
+                    tcp.EndConnect(ar);
+                    tcp.ReceiveTimeout = 8000; tcp.SendTimeout = 8000;
+                    using (var ssl = new System.Net.Security.SslStream(tcp.GetStream(), false, (s, c, ch, e) => true))
+                    {
+                        ssl.AuthenticateAsClient(host, null, (System.Security.Authentication.SslProtocols)(3072 | 12288), false);
+                        var req = System.Text.Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
+                            "\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36" +
+                            "\r\nAccept: text/html\r\nConnection: close\r\n\r\n");
+                        ssl.Write(req, 0, req.Length); ssl.Flush();
+                        var buf = new byte[16384]; int got = 0, n;
+                        while (got < buf.Length && (n = ssl.Read(buf, got, buf.Length - got)) > 0)
+                        { got += n; if (System.Text.Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
+                        string head = System.Text.Encoding.ASCII.GetString(buf, 0, got).ToLowerInvariant();
+                        if (head.Contains("/sorry/")) return Captcha;
+                        if (head.Contains("restrict") || head.Contains("unsupported") || head.Contains("unavailable") || head.Contains("not-available")) return Blocked;
+                        return Ok;
+                    }
+                }
+            }
+            catch { return NoLink; }
+        }
+
+        // результат по каждому сайту для набора DNS
+        public static string[] Service(int set)
+        {
+            var res = new string[Host.Length];
+            var th = new Thread[Host.Length];
+            for (int i = 0; i < Host.Length; i++)
+            {
+                int k = i;
+                th[k] = new Thread(() =>
+                {
+                    string ip = null;
+                    foreach (var srv in Dns.V4[set]) { ip = Resolve(srv, Host[k]); if (ip != null) break; }
+                    if (ip == null) res[k] = NoDns;
+                    else if (ip == "" || ip == "0.0.0.0") res[k] = Zero;
+                    else res[k] = Site(Host[k], ip);
+                });
+                th[k].IsBackground = true; th[k].Start();
+            }
+            foreach (var x in th) x.Join();
+            return res;
+        }
+
+        public static int Good(string[] res) { return res == null ? -1 : res.Count(x => x == Ok); }
+    }
+
     class MainForm : Form
     {
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
@@ -99,8 +208,9 @@ namespace HbAi.XboxDns
         int dnsSet;
         string error;
         float pulse;
-        Rectangle rToggle, rClose, rSite, rGroup, rBrand, rVk;
-        readonly Rectangle[] rSeg = new Rectangle[4];
+        Rectangle rToggle, rClose, rSite, rGroup, rBrand, rVk, rCheck, rBest;
+        readonly Rectangle[] rSeg = new Rectangle[Dns.Count];
+        string[] check; int checkSet = -1; bool checking; string bestNote;
         Point dragFrom;
         readonly System.Windows.Forms.Timer anim = new System.Windows.Forms.Timer();
 
@@ -108,7 +218,7 @@ namespace HbAi.XboxDns
         {
             LoadFonts();
             Text = "HB AI · Smart DNS";
-            ClientSize = new Size(440, 812);
+            ClientSize = new Size(440, 852);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Bg;
@@ -126,8 +236,8 @@ namespace HbAi.XboxDns
             int cur = Dns.ActiveSet();
             active = cur >= 0;
             dnsSet = cur >= 0 ? cur : 0;
-            int segW = (ClientSize.Width - 56) / 4;
-            for (int k = 0; k < 4; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
+            int segW = (ClientSize.Width - 56) / Dns.Count;
+            for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
         }
@@ -187,7 +297,7 @@ namespace HbAi.XboxDns
             // плашка сверху
             using (var f = new Font(fBold, 11f, GraphicsUnit.Point))
             {
-                string pill = "Smart DNS · " + Dns.Site[dnsSet];
+                string pill = "Smart DNS 1.2 · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
@@ -224,7 +334,7 @@ namespace HbAi.XboxDns
 
             // статус
             string status = busy ? "Применяем настройки…" : active ? "DNS включён" : "DNS выключен";
-            string sub = error != null ? error : busy ? "Секунду" : active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
+            string sub = error != null ? error : bestNote != null ? bestNote : busy ? "Секунду" : active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
             using (var f = new Font(fHead, 15f, GraphicsUnit.Point))
             using (var b = new SolidBrush(active && !busy ? Yellow : Color.White))
                 Centered(g, status, f, b, 420);
@@ -237,39 +347,59 @@ namespace HbAi.XboxDns
             using (var b = new SolidBrush(CardBg))
             using (var pen = new Pen(CardLine))
             { g.FillPath(b, path); g.DrawPath(pen, path); }
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < Dns.Count; k++)
             {
-                var sr = new RectangleF(rSeg[k].X + 5, rSeg[k].Y + 5, rSeg[k].Width - 10, rSeg[k].Height - 10);
+                var sr = new RectangleF(rSeg[k].X + 4, rSeg[k].Y + 5, rSeg[k].Width - 8, rSeg[k].Height - 10);
                 bool on = k == dnsSet;
                 if (on)
                     using (var path = RoundPath(sr, 12))
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
-                string label = k == 3 ? "Xbox" : k == 2 ? "GeoHide EU" : Dns.Name[k];
-                using (var f = new Font(fBold, 9.5f, GraphicsUnit.Point))
+                string label = Dns.Short[k];
+                using (var f = new Font(fBold, 8.5f, GraphicsUnit.Point))
                 using (var b = new SolidBrush(on ? Color.FromArgb(11, 11, 16) : Soft))
                 using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                     g.DrawString(label, f, b, sr, sf);
             }
 
-            // карточка с адресами
-            var card = new RectangleF(28, 574, W - 56, 86);
+            // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
+            var card = new RectangleF(28, 574, W - 56, 150);
             using (var path = RoundPath(card, 16))
             using (var b = new SolidBrush(CardBg))
             using (var pen = new Pen(CardLine))
             { g.FillPath(b, path); g.DrawPath(pen, path); }
             using (var fl = new Font(fBold, 9.5f, GraphicsUnit.Point))
-            using (var fv = new Font(fMed, 10.5f, GraphicsUnit.Point))
+            using (var fv = new Font(fMed, 10f, GraphicsUnit.Point))
             using (var bl = new SolidBrush(Violet))
             using (var bv = new SolidBrush(Color.FromArgb(233, 233, 242)))
             {
-                g.DrawString("DNS", fl, bl, card.X + 20, card.Y + 16);
-                g.DrawString(string.Join("  /  ", Dns.V4[dnsSet]), fv, bv, card.X + 76, card.Y + 14);
-                g.DrawString("Для", fl, bl, card.X + 20, card.Y + 48);
-                g.DrawString(Dns.Opens[dnsSet], fv, bv, card.X + 76, card.Y + 46);
+                g.DrawString("DNS", fl, bl, card.X + 18, card.Y + 14);
+                g.DrawString(string.Join("  /  ", Dns.V4[dnsSet]), fv, bv, card.X + 58, card.Y + 12);
+            }
+            // кнопки «Проверить» и «Найти лучший»
+            rCheck = new Rectangle((int)card.X + 18, (int)card.Y + 40, 160, 30);
+            rBest = new Rectangle((int)card.Right - 18 - 160, (int)card.Y + 40, 160, 30);
+            DrawSmall(g, rCheck, checking && checkSet == dnsSet ? "Проверяем…" : "Проверить " + Dns.Short[dnsSet], !checking);
+            DrawSmall(g, rBest, checking && checkSet == -2 ? "Ищем…" : "Найти лучший", !checking);
+            // результаты по сайтам: две колонки по три строки
+            bool forThis = check != null && checkSet == dnsSet;
+            using (var fn = new Font(fMed, 9.5f, GraphicsUnit.Point))
+            using (var fs = new Font(fBold, 8f, GraphicsUnit.Point))
+            {
+                for (int i = 0; i < Probe.Host.Length; i++)
+                {
+                    float x = card.X + 18 + (i / 3) * ((card.Width - 36) / 2), y = card.Y + 82 + (i % 3) * 22;
+                    string r = forThis ? check[i] : null;
+                    Color dot = r == null ? Color.FromArgb(70, 70, 88) : r == Probe.Ok ? Color.FromArgb(80, 200, 130) : r == Probe.Captcha ? Yellow : Color.FromArgb(255, 110, 110);
+                    using (var b = new SolidBrush(dot)) g.FillEllipse(b, x, y + 4, 9, 9);
+                    using (var b = new SolidBrush(Color.FromArgb(233, 233, 242))) g.DrawString(Probe.Label[i], fn, b, x + 16, y);
+                    if (r != null)
+                        using (var b = new SolidBrush(r == Probe.Ok ? Color.FromArgb(80, 200, 130) : r == Probe.Captcha ? Yellow : Color.FromArgb(255, 138, 138)))
+                            g.DrawString(r, fs, b, x + 92, y + 2);
+                }
             }
 
             // кнопка группы ВКонтакте
-            rVk = new Rectangle(28, 678, W - 56, 58);
+            rVk = new Rectangle(28, 742, W - 56, 56);
             using (var path = RoundPath(rVk, 16))
             using (var b = new LinearGradientBrush(rVk, Color.FromArgb(124, 92, 255), Color.FromArgb(76, 124, 255), LinearGradientMode.Horizontal))
                 g.FillPath(b, path);
@@ -281,16 +411,28 @@ namespace HbAi.XboxDns
             // подвал
             using (var fb = new Font(fHead, 13f, GraphicsUnit.Point))
             using (var bb = new SolidBrush(Violet))
-                g.DrawString("HB AI", fb, bb, 28, 760);
+                g.DrawString("HB AI", fb, bb, 28, 812);
             using (var f = new Font(fMed, 9.5f, GraphicsUnit.Point))
             using (var b = new SolidBrush(Muted))
             {
                 var t = "vk.com/neiroseti_ai";
                 var sz = g.MeasureString(t, f);
-                rGroup = new Rectangle((int)(W - 28 - sz.Width), 765, (int)sz.Width, (int)sz.Height);
+                rGroup = new Rectangle((int)(W - 28 - sz.Width), 817, (int)sz.Width, (int)sz.Height);
                 g.DrawString(t, f, b, rGroup.X, rGroup.Y);
-                rBrand = new Rectangle(28, 758, 110, 30);
+                rBrand = new Rectangle(28, 810, 110, 30);
             }
+        }
+
+        void DrawSmall(Graphics g, Rectangle r, string text, bool enabled)
+        {
+            using (var path = RoundPath(r, 10))
+            using (var b = new SolidBrush(enabled ? Color.FromArgb(40, 124, 92, 255) : Color.FromArgb(24, 24, 32)))
+            using (var pen = new Pen(enabled ? Color.FromArgb(115, 124, 92, 255) : CardLine))
+            { g.FillPath(b, path); g.DrawPath(pen, path); }
+            using (var f = new Font(fBold, 9f, GraphicsUnit.Point))
+            using (var b = new SolidBrush(enabled ? Soft : Muted))
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                g.DrawString(text, f, b, r, sf);
         }
 
         void DrawToggle(Graphics g)
@@ -360,8 +502,10 @@ namespace HbAi.XboxDns
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = e.X - c.X, dy = e.Y - c.Y;
             if (dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0) { Toggle(); return; }
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < Dns.Count; k++)
                 if (rSeg[k].Contains(e.Location)) { PickSet(k); return; }
+            if (rCheck.Contains(e.Location)) { RunCheck(dnsSet); return; }
+            if (rBest.Contains(e.Location)) { RunBest(); return; }
             dragFrom = e.Location;
         }
 
@@ -369,7 +513,7 @@ namespace HbAi.XboxDns
         {
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = e.X - c.X, dy = e.Y - c.Y;
-            bool hand = rClose.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location))
+            bool hand = rClose.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location)) || rCheck.Contains(e.Location) || rBest.Contains(e.Location)
                         || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
             Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
             if (e.Button == MouseButtons.Left && !hand)
@@ -392,9 +536,46 @@ namespace HbAi.XboxDns
             Apply(!active);
         }
 
+        // проверить выбранный сервис: DNS сервиса → прокси → сайт
+        void RunCheck(int set)
+        {
+            if (checking) return;
+            checking = true; checkSet = set; check = null; bestNote = null; Invalidate();
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var res = Probe.Service(set);
+                BeginInvoke((Action)(() => { checking = false; check = res; checkSet = set; Invalidate(); }));
+            });
+        }
+
+        // перебрать все сервисы для нейросетей и выбрать тот, где открывается больше всего
+        void RunBest()
+        {
+            if (checking) return;
+            checking = true; checkSet = -2; check = null; bestNote = null; Invalidate();
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                int n = Dns.Count - 1; // Xbox DNS не считаем
+                var all = new string[n][];
+                var th = new Thread[n];
+                for (int k = 0; k < n; k++) { int s = k; th[s] = new Thread(() => all[s] = Probe.Service(s)); th[s].IsBackground = true; th[s].Start(); }
+                foreach (var x in th) x.Join();
+                int best = 0;
+                for (int k = 1; k < n; k++) if (Probe.Good(all[k]) > Probe.Good(all[best])) best = k;
+                int good = Probe.Good(all[best]);
+                BeginInvoke((Action)(() =>
+                {
+                    checking = false; check = all[best]; checkSet = best;
+                    bestNote = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
+                    if (best != dnsSet) { dnsSet = best; if (active) Apply(true); }
+                    Invalidate();
+                }));
+            });
+        }
+
         void Apply(bool turnOn)
         {
-            busy = true; error = null; Invalidate();
+            busy = true; error = null; bestNote = null; Invalidate();
             int set = dnsSet;
             ThreadPool.QueueUserWorkItem(_ =>
             {
@@ -411,6 +592,7 @@ namespace HbAi.XboxDns
                     if (err != null && active != turnOn)
                         error = "Не получилось: запустите от имени администратора";
                     Invalidate();
+                    if (active && error == null && turnOn) RunCheck(dnsSet);
                 }));
             });
         }

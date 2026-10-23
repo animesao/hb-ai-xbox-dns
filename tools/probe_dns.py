@@ -1,17 +1,21 @@
 """Проверка Smart DNS-сервисов: что отдают для нейросетей и пускают ли сайты через их прокси.
 
-python tools/probe_dns.py — таблица по всем кандидатам (запускать без VPN, из России).
+python tools/probe_dns.py — таблица по всем кандидатам (запускать без VPN и туннелей, из России:
+туннель перехватывает порт 53, и все серверы «отвечают» одинаково).
 """
 import socket, struct, subprocess, sys
 
 CANDIDATES = [
-    ("GeoHide", "159.194.200.33"), ("GeoHide-2", "193.233.112.67"), ("GeoHide-EU", "143.20.64.192"),
-    ("Comss.one", "83.220.169.155"), ("Comss.one-2", "212.109.195.93"), ("Astracat", "135.106.217.200"), ("GeoHide-EU-2", "45.13.237.213"),
-    ("XyZ", "109.120.137.190"), ("Malw.link", "95.216.204.218"), ("DNS-AI", "192.144.59.14"),
+    ("Comss.one", "83.220.169.155"), ("Comss.one-2", "212.109.195.93"), ("Comss резерв", "195.133.25.16"),
+    ("GeoHide-EU", "143.20.64.192"), ("GeoHide-EU-2", "45.13.237.213"), ("GeoHide-EU-3", "5.175.161.40"),
+    ("MagicDNS", "109.120.132.43"), ("MagicDNS-2", "94.249.177.102"), ("Astracat", "135.106.217.200"),
+    ("GeoHide RU", "159.194.200.33"), ("GeoHide RU-2", "193.233.112.67"),
+    ("XyZ", "109.120.137.190"), ("Malw.link", "95.216.204.218"), ("DNS-AI", "194.87.196.13"), ("Mafioznik", "103.27.157.38"),
     ("Xbox DNS", "111.88.96.54"),
 ]
 SITES = [("chatgpt.com", "https://chatgpt.com/"), ("claude.ai", "https://claude.ai/"),
-         ("gemini.google.com", "https://gemini.google.com/app"), ("elevenlabs.io", "https://elevenlabs.io/")]
+         ("gemini.google.com", "https://gemini.google.com/app"), ("elevenlabs.io", "https://elevenlabs.io/"),
+         ("grok.com", "https://grok.com/"), ("www.perplexity.ai", "https://www.perplexity.ai/")]
 BLOCK = ("restrict", "unsupported", "unavailable", "not-available")
 
 
@@ -49,6 +53,7 @@ def fetch(url, host, ip):
                           "--resolve", f"{host}:443:{ip}", "-w", "%{http_code} %{redirect_url}", url],
                          capture_output=True, text=True).stdout
     if out.startswith("000"): return "нет связи"
+    if "/sorry/" in out: return "капча Google"
     if any(b in out for b in BLOCK): return "блок страны"
     return "ок " + out.split()[0]
 
