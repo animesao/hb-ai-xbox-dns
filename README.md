@@ -4,14 +4,17 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 
 > **Версия 1.2, 23 октября 2026.** В программе появилась проверка: кнопка «Проверить» показывает, какие сайты открываются через выбранный сервис, а «Найти лучший» сама перебирает все сервисы и включает тот, где открывается больше всего. После включения DNS проверка запускается сама. Список сервисов обновлён по проверке из России 23.10.2026: добавлены MagicDNS и Astracat, российский узел GeoHide убран (его прокси из России не открываются), Comss.one остался, но Gemini через него упирается в капчу Google. Xbox DNS по-прежнему только для Xbox Live. Такие сервисы бесплатные, и доступ через них то пропадает, то возвращается: если сайт не открывается, нажмите «Найти лучший».
 
-<a href="https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe"><img src="docs/download-button.png" width="480" alt="Скачать HB AI Smart DNS для Windows"></a>
+<p>
+<a href="https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe"><img src="docs/download-button.png" width="400" alt="Скачать HB AI Smart DNS для Windows"></a>
+<a href="https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip"><img src="docs/download-button-mac.png" width="400" alt="Скачать HB AI Smart DNS для Mac"></a>
+</p>
 
-Нажмите на кнопку — файл скачается сразу. Дальше:
+Нажмите на кнопку — файл скачается сразу. На Mac дальше смотрите [раздел «Для Mac»](#для-mac), на Windows:
 1. Откройте скачанный `HB_AI_Xbox_DNS.exe`.
 2. Если Windows напишет «Windows защитила ваш компьютер», нажмите **Подробнее** → **Выполнить в любом случае**, а на вопрос о правах администратора — **Да**.
 3. Выберите сервис и нажмите большую кнопку в окне программы.
 
-Не скачивается по кнопке? [Вот прямая ссылка](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 219 КБ · Windows 10/11 · бесплатно · открытый код
+Не скачивается по кнопке? Прямые ссылки: [для Windows](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 219 КБ · Windows 10/11, [для Mac](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip) · 850 КБ · macOS 13+. Бесплатно, открытый код.
 
 <img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
