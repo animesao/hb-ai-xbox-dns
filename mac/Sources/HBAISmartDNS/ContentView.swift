@@ -1,0 +1,254 @@
+import SwiftUI
+import AppKit
+
+final class Model: ObservableObject {
+    @Published var active = false
+    @Published var busy = false
+    @Published var dnsSet = 0
+    @Published var error: String?
+    @Published var check: [String]?
+    @Published var checkSet = -1
+    @Published var checking = false
+    @Published var bestNote: String?
+
+    init() {
+        let cur = Dns.activeSet()
+        active = cur != nil
+        dnsSet = cur ?? 0
+    }
+
+    func toggle() { if !busy { apply(!active) } }
+
+    // смена набора: если DNS уже включён, сразу переключаем адреса
+    func pick(_ k: Int) {
+        guard !busy, k != dnsSet else { return }
+        dnsSet = k
+        if active { apply(true) }
+    }
+
+    func apply(_ turnOn: Bool) {
+        busy = true; error = nil; bestNote = nil
+        let set = dnsSet
+        DispatchQueue.global().async {
+            let err = turnOn ? Dns.enable(set) : Dns.disable()
+            let now = Dns.activeSet()
+            DispatchQueue.main.async {
+                self.busy = false
+                self.active = now != nil
+                if let n = now { self.dnsSet = n }
+                if let e = err, self.active != turnOn { self.error = e }
+                if self.active && err == nil && turnOn { self.runCheck(self.dnsSet) }
+            }
+        }
+    }
+
+    // проверить выбранный сервис: DNS сервиса → прокси → сайт
+    func runCheck(_ set: Int) {
+        guard !checking else { return }
+        checking = true; checkSet = set; check = nil; bestNote = nil
+        DispatchQueue.global().async {
+            let res = Probe.service(set)
+            DispatchQueue.main.async { self.checking = false; self.check = res; self.checkSet = set }
+        }
+    }
+
+    // перебрать все сервисы для нейросетей и выбрать тот, где открывается больше всего
+    func runBest() {
+        guard !checking else { return }
+        checking = true; checkSet = -2; check = nil; bestNote = nil
+        DispatchQueue.global().async {
+            let n = Services.count - 1 // Xbox DNS не считаем
+            var all = Array(repeating: [String](), count: n)
+            let lock = NSLock(); let group = DispatchGroup()
+            for s in 0..<n {
+                group.enter()
+                DispatchQueue.global().async {
+                    let r = Probe.service(s)
+                    lock.lock(); all[s] = r; lock.unlock()
+                    group.leave()
+                }
+            }
+            group.wait()
+            var best = 0
+            for k in 1..<n where Probe.good(all[k]) > Probe.good(all[best]) { best = k }
+            let good = Probe.good(all[best])
+            DispatchQueue.main.async {
+                self.checking = false; self.check = all[best]; self.checkSet = best
+                self.bestNote = good == 0 ? "Сейчас ни один сервис не открывает нейросети"
+                    : "Лучший сейчас: \(Services.name[best]) (\(good) из \(Probe.host.count))"
+                if best != self.dnsSet { self.dnsSet = best; if self.active { self.apply(true) } }
+            }
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var m = Model()
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Palette.bg
+            RadialGradient(colors: [Palette.violet.opacity(0.38), .clear], center: .init(x: 0.95, y: 0.02), startRadius: 0, endRadius: 320)
+            RadialGradient(colors: [Color(red: 60 / 255, green: 140 / 255, blue: 255 / 255).opacity(0.22), .clear], center: .init(x: 0.0, y: 0.75), startRadius: 0, endRadius: 280)
+            VStack(alignment: .leading, spacing: 0) {
+                pill.padding(.top, 34)
+                title.padding(.top, 20)
+                toggle.padding(.top, 22).frame(maxWidth: .infinity)
+                status.padding(.top, 18).frame(maxWidth: .infinity)
+                segments.padding(.top, 20)
+                card.padding(.top, 16)
+                vkButton.padding(.top, 16)
+                footer.padding(.top, 18)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 28)
+        }
+        .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+    }
+
+    // плашка сверху: ведёт на сайт сервиса
+    var pill: some View {
+        Button { open(Services.url[m.dnsSet]) } label: {
+            HStack(spacing: 8) {
+                Circle().fill(Palette.yellow).frame(width: 10, height: 10)
+                Text("Smart DNS 1.2 · " + Services.site[m.dnsSet]).font(Fonts.bold(11)).foregroundColor(Palette.soft)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(Capsule().fill(Palette.violet.opacity(0.16)))
+            .overlay(Capsule().stroke(Palette.violet.opacity(0.45)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    var title: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Доступ").font(Fonts.head(22)).foregroundColor(.white)
+            Text("к сервисам").font(Fonts.head(22)).foregroundColor(Palette.ink)
+                .padding(.horizontal, 4)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Palette.yellow))
+        }
+    }
+
+    var toggle: some View {
+        Button { m.toggle() } label: {
+            ZStack {
+                Circle().fill(m.active ? Palette.yellow : Palette.card)
+                    .overlay(Circle().stroke(m.active ? Palette.yellow : Color(red: 70 / 255, green: 70 / 255, blue: 88 / 255), lineWidth: 3))
+                    .shadow(color: (m.active ? Palette.yellow : Palette.violet).opacity(m.active || m.busy ? (pulse ? 0.55 : 0.25) : 0), radius: 34)
+                if m.busy {
+                    Circle().trim(from: 0, to: 0.25).stroke(Palette.violet, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                        .frame(width: 180, height: 180)
+                        .rotationEffect(.degrees(pulse ? 360 : 0))
+                        .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: pulse)
+                }
+                VStack(spacing: 10) {
+                    Image(systemName: "power").font(.system(size: 54, weight: .bold))
+                        .foregroundColor(m.active ? Palette.ink : .white)
+                    Text(m.active ? "ВКЛ" : "ВЫКЛ").font(Fonts.head(13)).foregroundColor(m.active ? Palette.ink : Palette.soft)
+                }
+            }
+            .frame(width: 200, height: 200)
+        }
+        .buttonStyle(.plain)
+        .disabled(m.busy)
+        .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever()) { pulse = true } }
+    }
+
+    var status: some View {
+        VStack(spacing: 6) {
+            Text(m.busy ? "Применяем настройки…" : m.active ? "DNS включён" : "DNS выключен")
+                .font(Fonts.head(15)).foregroundColor(m.active && !m.busy ? Palette.yellow : .white)
+            Text(m.error ?? m.bestNote ?? (m.busy ? "Секунду" : m.active ? Services.name[m.dnsSet] + ": " + Services.opens[m.dnsSet] : "Обычный DNS от роутера или провайдера"))
+                .font(Fonts.med(10.5)).foregroundColor(m.error != nil ? Color(red: 1, green: 138 / 255, blue: 138 / 255) : Palette.muted)
+                .multilineTextAlignment(.center).frame(maxWidth: 380)
+        }
+    }
+
+    var segments: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<Services.count, id: \.self) { k in
+                Button { m.pick(k) } label: {
+                    Text(Services.short[k]).font(Fonts.bold(9.5))
+                        .foregroundColor(k == m.dnsSet ? Palette.ink : Palette.soft)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(k == m.dnsSet ? Palette.yellow : .clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(5)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.line))
+    }
+
+    // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
+    var card: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Text("DNS").font(Fonts.bold(9.5)).foregroundColor(Palette.violet)
+                Text(Services.v4[m.dnsSet].joined(separator: "  /  ")).font(Fonts.med(10)).foregroundColor(Palette.text)
+            }
+            HStack {
+                small(m.checking && m.checkSet == m.dnsSet ? "Проверяем…" : "Проверить " + Services.short[m.dnsSet]) { m.runCheck(m.dnsSet) }
+                Spacer()
+                small(m.checking && m.checkSet == -2 ? "Ищем…" : "Найти лучший") { m.runBest() }
+            }
+            let forThis = m.check != nil && m.checkSet == m.dnsSet
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 6) {
+                ForEach(order, id: \.self) { i in
+                    let r: String? = forThis ? m.check![i] : nil
+                    HStack(spacing: 6) {
+                        Circle().fill(dot(r)).frame(width: 9, height: 9)
+                        Text(Probe.label[i]).font(Fonts.med(9.5)).foregroundColor(Palette.text).frame(width: 72, alignment: .leading)
+                        if let r = r { Text(r).font(Fonts.bold(8)).foregroundColor(dot(r)) }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.line))
+    }
+
+    // порядок, при котором сетка 2×3 идёт колонками, как в версии для Windows
+    private var order: [Int] { [0, 3, 1, 4, 2, 5] }
+
+    private func dot(_ r: String?) -> Color {
+        guard let r = r else { return Color(red: 70 / 255, green: 70 / 255, blue: 88 / 255) }
+        if r == Probe.ok { return Palette.green }
+        if r == Probe.captcha { return Palette.yellow }
+        return Palette.red
+    }
+
+    private func small(_ text: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text).font(Fonts.bold(9)).foregroundColor(m.checking ? Palette.muted : Palette.soft)
+                .frame(width: 160, height: 30)
+                .background(RoundedRectangle(cornerRadius: 10).fill(m.checking ? Palette.card : Palette.violet.opacity(0.16)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(m.checking ? Palette.line : Palette.violet.opacity(0.45)))
+        }
+        .buttonStyle(.plain)
+        .disabled(m.checking)
+    }
+
+    var vkButton: some View {
+        Button { open("https://vk.com/neiroseti_ai") } label: {
+            Text("Наша группа ВКонтакте  →").font(Fonts.head(11.5)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 56)
+                .background(RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [Color(red: 124 / 255, green: 92 / 255, blue: 1), Color(red: 76 / 255, green: 124 / 255, blue: 1)], startPoint: .leading, endPoint: .trailing)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    var footer: some View {
+        HStack {
+            Button { open("https://vk.com/neiroseti_ai") } label: { Text("HB AI").font(Fonts.head(13)).foregroundColor(Palette.violet) }.buttonStyle(.plain)
+            Spacer()
+            Button { open("https://vk.com/neiroseti_ai") } label: { Text("vk.com/neiroseti_ai").font(Fonts.med(9.5)).foregroundColor(Palette.muted) }.buttonStyle(.plain)
+        }
+    }
+
+    private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
+}
