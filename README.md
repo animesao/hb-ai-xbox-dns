@@ -11,7 +11,7 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 2. Если Windows напишет «Windows защитила ваш компьютер», нажмите **Подробнее** → **Выполнить в любом случае**, а на вопрос о правах администратора — **Да**.
 3. Выберите сервис и нажмите большую кнопку в окне программы.
 
-Не скачивается по кнопке? [Вот прямая ссылка](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 214 КБ · Windows 10/11 · бесплатно · открытый код
+Не скачивается по кнопке? [Вот прямая ссылка](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 219 КБ · Windows 10/11 · бесплатно · открытый код
 
 <img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
@@ -114,7 +114,7 @@ build.bat
 
 ## In English
 
-**HB AI · Smart DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets Comss.one, GeoHide, MagicDNS, Astracat or xbox-dns.ru DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 218 KB exe that runs two PowerShell commands and has a built-in reachability check (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`). Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
+**HB AI · Smart DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets Comss.one, GeoHide, MagicDNS, Astracat or xbox-dns.ru DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 219 KB exe that runs two PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`) and has a built-in reachability check for ChatGPT, Claude, Gemini, ElevenLabs, Grok and Perplexity. Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
 
 ## Лицензия
 

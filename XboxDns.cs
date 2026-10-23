@@ -23,7 +23,7 @@ namespace HbAi.XboxDns
         // (159.194.200.33, 193.233.112.x) отвечают, но их прокси из России не открываются — убраны.
         // xbox-dns.ru с 10.10.2026 на нейросети отвечает 0.0.0.0, оставлен только для Xbox Live.
         public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Astracat", "Xbox DNS" };
-        public static readonly string[] Short = { "Comss", "GeoHide EU", "MagicDNS", "Astracat", "Xbox" };
+        public static readonly string[] Short = { "Comss", "GeoHide", "MagicDNS", "Astracat", "Xbox" };
         public static readonly string[][] V4 = {
             new[] { "83.220.169.155", "212.109.195.93" },
             new[] { "143.20.64.192", "45.13.237.213" },
@@ -208,7 +208,7 @@ namespace HbAi.XboxDns
         int dnsSet;
         string error;
         float pulse;
-        Rectangle rToggle, rClose, rSite, rGroup, rBrand, rVk, rCheck, rBest;
+        Rectangle rToggle, rClose, rMin, rSite, rGroup, rBrand, rVk, rCheck, rBest;
         readonly Rectangle[] rSeg = new Rectangle[Dns.Count];
         string[] check; int checkSet = -1; bool checking; string bestNote;
         Point dragFrom;
@@ -227,6 +227,7 @@ namespace HbAi.XboxDns
             Region = RoundRegion(ClientRectangle, 22);
 
             rClose = new Rectangle(ClientSize.Width - 58, 22, 36, 36);
+            rMin = new Rectangle(ClientSize.Width - 100, 22, 36, 36);
             rToggle = new Rectangle((ClientSize.Width - 200) / 2, 196, 200, 200);
 
             anim.Interval = 30;
@@ -308,13 +309,15 @@ namespace HbAi.XboxDns
                 using (var b = new SolidBrush(Yellow)) g.FillEllipse(b, pr.X + 16, pr.Y + 12, 10, 10);
                 using (var b = new SolidBrush(Soft)) g.DrawString(pill, f, b, pr.X + 32, pr.Y + (34 - sz.Height) / 2 + 1);
             }
-            // крестик
+            // крестик и чёрточка «свернуть»
             using (var pen = new Pen(Muted, 2f))
             {
                 int c = 9;
                 var m = new Point(rClose.X + rClose.Width / 2, rClose.Y + rClose.Height / 2);
                 g.DrawLine(pen, m.X - c, m.Y - c, m.X + c, m.Y + c);
                 g.DrawLine(pen, m.X + c, m.Y - c, m.X - c, m.Y + c);
+                var n = new Point(rMin.X + rMin.Width / 2, rMin.Y + rMin.Height / 2);
+                g.DrawLine(pen, n.X - c, n.Y + 4, n.X + c, n.Y + 4);
             }
 
             // заголовок
@@ -496,6 +499,7 @@ namespace HbAi.XboxDns
         {
             if (e.Button != MouseButtons.Left) return;
             if (rClose.Contains(e.Location)) { Close(); return; }
+            if (rMin.Contains(e.Location)) { WindowState = FormWindowState.Minimized; return; }
             if (rGroup.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
             if (rSite.Contains(e.Location)) { Open(Dns.Url[dnsSet]); return; }
             if (rBrand.Contains(e.Location) || rVk.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
@@ -513,7 +517,7 @@ namespace HbAi.XboxDns
         {
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = e.X - c.X, dy = e.Y - c.Y;
-            bool hand = rClose.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location)) || rCheck.Contains(e.Location) || rBest.Contains(e.Location)
+            bool hand = rClose.Contains(e.Location) || rMin.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location)) || rCheck.Contains(e.Location) || rBest.Contains(e.Location)
                         || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
             Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
             if (e.Button == MouseButtons.Left && !hand)
