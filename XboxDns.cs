@@ -1,4 +1,4 @@
-// HB AI · Smart DNS 1.2 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, Astracat, xbox-dns.ru) со встроенной проверкой.
+// HB AI · Smart DNS 1.21 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, Astracat, xbox-dns.ru) со встроенной проверкой.
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
 using System;
 using System.Diagnostics;
@@ -212,38 +212,85 @@ namespace HbAi.XboxDns
         readonly Rectangle[] rSeg = new Rectangle[Dns.Count];
         string[] check; int checkSet = -1; bool checking; string bestNote;
         Point dragFrom;
+        // Разметка в «логических» пикселях окна 440×852 (как при 100 %), на экран всё умножается на S = DPI / 96.
+        const int LW = 440, LH = 852;
+        float S = 1f;
+        internal static float ForceScale;
         readonly System.Windows.Forms.Timer anim = new System.Windows.Forms.Timer();
 
         public MainForm()
         {
             LoadFonts();
             Text = "HB AI · Smart DNS";
-            ClientSize = new Size(440, 852);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Bg;
             DoubleBuffered = true;
             try { Icon = new Icon(Assembly.GetExecutingAssembly().GetManifestResourceStream("app.ico")); } catch { }
-            Region = RoundRegion(ClientRectangle, 22);
+            ApplyScale(ForceScale > 0 ? ForceScale : WindowDpi() / 96f, Screen.FromPoint(Cursor.Position).WorkingArea);
 
-            rClose = new Rectangle(ClientSize.Width - 58, 22, 36, 36);
-            rMin = new Rectangle(ClientSize.Width - 100, 22, 36, 36);
-            rToggle = new Rectangle((ClientSize.Width - 200) / 2, 196, 200, 200);
+            rClose = new Rectangle(LW - 58, 22, 36, 36);
+            rMin = new Rectangle(LW - 100, 22, 36, 36);
+            rToggle = new Rectangle((LW - 200) / 2, 196, 200, 200);
 
             anim.Interval = 30;
-            anim.Tick += (s, e) => { pulse = (pulse + 0.035f) % 1f; if (busy || active) Invalidate(rToggleGlow()); };
+            anim.Tick += (s, e) => { pulse = (pulse + 0.035f) % 1f; if (busy || active) Invalidate(ToScreen(rToggleGlow())); };
             anim.Start();
 
             int cur = Dns.ActiveSet();
             active = cur >= 0;
             dnsSet = cur >= 0 ? cur : 0;
-            int segW = (ClientSize.Width - 56) / Dns.Count;
+            int segW = (LW - 56) / Dns.Count;
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
         }
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
+
+        [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
+
+        float WindowDpi()
+        {
+            try { uint d = GetDpiForWindow(Handle); if (d > 0) return d; } catch { }   // Windows 10 1607+
+            using (var g0 = CreateGraphics()) return g0.DpiX;
+        }
+
+        // Размер окна под масштаб: окно целиком должно влезать в рабочую область экрана
+        // (на ноутбуке 1080p при 150 % высота 852 × 1,5 больше экрана — тогда окно уменьшается целиком).
+        void ApplyScale(float scale, Rectangle wa)
+        {
+            S = ForceScale > 0 ? ForceScale : Math.Min(scale, Math.Min((wa.Height - 24f) / LH, (wa.Width - 24f) / LW));
+            ClientSize = new Size((int)Math.Round(LW * S), (int)Math.Round(LH * S));
+            Region = RoundRegion(ClientRectangle, (int)Math.Round(22 * S));
+            if (IsHandleCreated && Visible)
+                Location = new Point(Math.Max(wa.Left, Math.Min(Left, wa.Right - Width)), Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height)));
+            Invalidate();
+        }
+
+        // Масштаб Windows поменяли на ходу или окно перенесли на другой монитор
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_DPICHANGED = 0x02E0;
+            if (m.Msg == WM_DPICHANGED)
+            {
+                int dpi = (int)((long)m.WParam & 0xFFFF);
+                var sug = (RECT)Marshal.PtrToStructure(m.LParam, typeof(RECT));
+                var wa = Screen.FromRectangle(Rectangle.FromLTRB(sug.Left, sug.Top, sug.Right, sug.Bottom)).WorkingArea;
+                Location = new Point(sug.Left, sug.Top);
+                ApplyScale(dpi / 96f, wa);
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+
+        Rectangle ToScreen(Rectangle r) { return Rectangle.FromLTRB((int)Math.Floor(r.Left * S), (int)Math.Floor(r.Top * S), (int)Math.Ceiling(r.Right * S), (int)Math.Ceiling(r.Bottom * S)); }
+        Point ToLogical(Point p) { return new Point((int)(p.X / S), (int)(p.Y / S)); }
+        // Размер шрифта в пунктах при 100 %; задаём в пикселях, чтобы его масштабировал ScaleTransform, а не DPI второй раз.
+        static Font Pt(FontFamily fam, float pt) { return new Font(fam, pt * 96f / 72f, GraphicsUnit.Pixel); }
 
         void LoadFonts()
         {
@@ -287,18 +334,19 @@ namespace HbAi.XboxDns
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
+            g.ScaleTransform(S, S);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            int W = ClientSize.Width;
+            int W = LW;
 
             // фон: мягкое фиолетовое свечение, как на обложках сообщества
             Glow(g, new RectangleF(W - 330, -260, 560, 520), Color.FromArgb(95, 124, 92, 255));
             Glow(g, new RectangleF(-260, 460, 520, 460), Color.FromArgb(55, 60, 140, 255));
 
             // плашка сверху
-            using (var f = new Font(fBold, 11f, GraphicsUnit.Point))
+            using (var f = Pt(fBold, 11f))
             {
-                string pill = "Smart DNS 1.2 · " + Dns.Site[dnsSet];
+                string pill = "Smart DNS 1.21 · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
@@ -321,7 +369,7 @@ namespace HbAi.XboxDns
             }
 
             // заголовок
-            using (var f = new Font(fHead, 22f, GraphicsUnit.Point))
+            using (var f = Pt(fHead, 22f))
             using (var b = new SolidBrush(Color.White))
             {
                 g.DrawString("Доступ", f, b, 28, 82);
@@ -338,10 +386,10 @@ namespace HbAi.XboxDns
             // статус
             string status = busy ? "Применяем настройки…" : active ? "DNS включён" : "DNS выключен";
             string sub = error != null ? error : bestNote != null ? bestNote : busy ? "Секунду" : active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
-            using (var f = new Font(fHead, 15f, GraphicsUnit.Point))
+            using (var f = Pt(fHead, 15f))
             using (var b = new SolidBrush(active && !busy ? Yellow : Color.White))
                 Centered(g, status, f, b, 420);
-            using (var f = new Font(fMed, 10.5f, GraphicsUnit.Point))
+            using (var f = Pt(fMed, 10.5f))
             using (var b = new SolidBrush(error != null ? Color.FromArgb(255, 138, 138) : Muted))
                 Centered(g, sub, f, b, 454, W - 60);
 
@@ -358,7 +406,7 @@ namespace HbAi.XboxDns
                     using (var path = RoundPath(sr, 12))
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
                 string label = Dns.Short[k];
-                using (var f = new Font(fBold, 8.5f, GraphicsUnit.Point))
+                using (var f = Pt(fBold, 8.5f))
                 using (var b = new SolidBrush(on ? Color.FromArgb(11, 11, 16) : Soft))
                 using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                     g.DrawString(label, f, b, sr, sf);
@@ -370,8 +418,8 @@ namespace HbAi.XboxDns
             using (var b = new SolidBrush(CardBg))
             using (var pen = new Pen(CardLine))
             { g.FillPath(b, path); g.DrawPath(pen, path); }
-            using (var fl = new Font(fBold, 9.5f, GraphicsUnit.Point))
-            using (var fv = new Font(fMed, 10f, GraphicsUnit.Point))
+            using (var fl = Pt(fBold, 9.5f))
+            using (var fv = Pt(fMed, 10f))
             using (var bl = new SolidBrush(Violet))
             using (var bv = new SolidBrush(Color.FromArgb(233, 233, 242)))
             {
@@ -385,8 +433,8 @@ namespace HbAi.XboxDns
             DrawSmall(g, rBest, checking && checkSet == -2 ? "Ищем…" : "Найти лучший", !checking);
             // результаты по сайтам: две колонки по три строки
             bool forThis = check != null && checkSet == dnsSet;
-            using (var fn = new Font(fMed, 9.5f, GraphicsUnit.Point))
-            using (var fs = new Font(fBold, 8f, GraphicsUnit.Point))
+            using (var fn = Pt(fMed, 9.5f))
+            using (var fs = Pt(fBold, 8f))
             {
                 for (int i = 0; i < Probe.Host.Length; i++)
                 {
@@ -406,16 +454,16 @@ namespace HbAi.XboxDns
             using (var path = RoundPath(rVk, 16))
             using (var b = new LinearGradientBrush(rVk, Color.FromArgb(124, 92, 255), Color.FromArgb(76, 124, 255), LinearGradientMode.Horizontal))
                 g.FillPath(b, path);
-            using (var f = new Font(fHead, 11.5f, GraphicsUnit.Point))
+            using (var f = Pt(fHead, 11.5f))
             using (var b = new SolidBrush(Color.White))
             using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                 g.DrawString("Наша группа ВКонтакте  →", f, b, rVk, sf);
 
             // подвал
-            using (var fb = new Font(fHead, 13f, GraphicsUnit.Point))
+            using (var fb = Pt(fHead, 13f))
             using (var bb = new SolidBrush(Violet))
                 g.DrawString("HB AI", fb, bb, 28, 812);
-            using (var f = new Font(fMed, 9.5f, GraphicsUnit.Point))
+            using (var f = Pt(fMed, 9.5f))
             using (var b = new SolidBrush(Muted))
             {
                 var t = "vk.com/neiroseti_ai";
@@ -432,7 +480,7 @@ namespace HbAi.XboxDns
             using (var b = new SolidBrush(enabled ? Color.FromArgb(40, 124, 92, 255) : Color.FromArgb(24, 24, 32)))
             using (var pen = new Pen(enabled ? Color.FromArgb(115, 124, 92, 255) : CardLine))
             { g.FillPath(b, path); g.DrawPath(pen, path); }
-            using (var f = new Font(fBold, 9f, GraphicsUnit.Point))
+            using (var f = Pt(fBold, 9f))
             using (var b = new SolidBrush(enabled ? Soft : Muted))
             using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                 g.DrawString(text, f, b, r, sf);
@@ -465,7 +513,7 @@ namespace HbAi.XboxDns
                 g.DrawArc(pen, c.X - 32, c.Y - 32, 64, 64, -60, 300);
                 g.DrawLine(pen, c.X, c.Y - 40, c.X, c.Y - 6);
             }
-            using (var f = new Font(fHead, 13f, GraphicsUnit.Point))
+            using (var f = Pt(fHead, 13f))
             using (var b = new SolidBrush(active ? Color.FromArgb(11, 11, 16) : Soft))
             {
                 string t = active ? "ВКЛ" : "ВЫКЛ";
@@ -491,33 +539,35 @@ namespace HbAi.XboxDns
         void Centered(Graphics g, string s, Font f, Brush b, float y, float maxW = 0)
         {
             var sf = new StringFormat { Alignment = StringAlignment.Center };
-            float w = maxW > 0 ? maxW : ClientSize.Width;
-            g.DrawString(s, f, b, new RectangleF((ClientSize.Width - w) / 2, y, w, 40), sf);
+            float w = maxW > 0 ? maxW : LW;
+            g.DrawString(s, f, b, new RectangleF((LW - w) / 2, y, w, 40), sf);
         }
 
         void OnDown(object s, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
-            if (rClose.Contains(e.Location)) { Close(); return; }
-            if (rMin.Contains(e.Location)) { WindowState = FormWindowState.Minimized; return; }
-            if (rGroup.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
-            if (rSite.Contains(e.Location)) { Open(Dns.Url[dnsSet]); return; }
-            if (rBrand.Contains(e.Location) || rVk.Contains(e.Location)) { Open("https://vk.com/neiroseti_ai"); return; }
+            var lp = ToLogical(e.Location);
+            if (rClose.Contains(lp)) { Close(); return; }
+            if (rMin.Contains(lp)) { WindowState = FormWindowState.Minimized; return; }
+            if (rGroup.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
+            if (rSite.Contains(lp)) { Open(Dns.Url[dnsSet]); return; }
+            if (rBrand.Contains(lp) || rVk.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
-            double dx = e.X - c.X, dy = e.Y - c.Y;
+            double dx = lp.X - c.X, dy = lp.Y - c.Y;
             if (dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0) { Toggle(); return; }
             for (int k = 0; k < Dns.Count; k++)
-                if (rSeg[k].Contains(e.Location)) { PickSet(k); return; }
-            if (rCheck.Contains(e.Location)) { RunCheck(dnsSet); return; }
-            if (rBest.Contains(e.Location)) { RunBest(); return; }
+                if (rSeg[k].Contains(lp)) { PickSet(k); return; }
+            if (rCheck.Contains(lp)) { RunCheck(dnsSet); return; }
+            if (rBest.Contains(lp)) { RunBest(); return; }
             dragFrom = e.Location;
         }
 
         void OnMove(object s, MouseEventArgs e)
         {
+            var lp = ToLogical(e.Location);
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
-            double dx = e.X - c.X, dy = e.Y - c.Y;
-            bool hand = rClose.Contains(e.Location) || rMin.Contains(e.Location) || rGroup.Contains(e.Location) || rSite.Contains(e.Location) || rBrand.Contains(e.Location) || rVk.Contains(e.Location) || rSeg.Any(r => r.Contains(e.Location)) || rCheck.Contains(e.Location) || rBest.Contains(e.Location)
+            double dx = lp.X - c.X, dy = lp.Y - c.Y;
+            bool hand = rClose.Contains(lp) || rMin.Contains(lp) || rGroup.Contains(lp) || rSite.Contains(lp) || rBrand.Contains(lp) || rVk.Contains(lp) || rSeg.Any(r => r.Contains(lp)) || rCheck.Contains(lp) || rBest.Contains(lp)
                         || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
             Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
             if (e.Button == MouseButtons.Left && !hand)
@@ -605,10 +655,22 @@ namespace HbAi.XboxDns
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // проверка разметки при другом масштабе экрана: --shot 1.5 out.png (DNS не трогает)
+            if (args.Length == 3 && args[0] == "--shot")
+            {
+                MainForm.ForceScale = float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture);
+                using (var f = new MainForm())
+                using (var bmp = new Bitmap(f.ClientSize.Width, f.ClientSize.Height))
+                {
+                    f.DrawToBitmap(bmp, new Rectangle(Point.Empty, f.ClientSize));
+                    bmp.Save(args[2], System.Drawing.Imaging.ImageFormat.Png);
+                }
+                return;
+            }
             Application.Run(new MainForm());
         }
     }
