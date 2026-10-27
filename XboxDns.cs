@@ -179,14 +179,20 @@ namespace HbAi.XboxDns
                 {
                     string ip = null;
                     foreach (var srv in Dns.V4[set]) { ip = Resolve(srv, Host[k]); if (ip != null) break; }
-                    if (ip == null) res[k] = NoDns;
-                    else if (ip == "" || ip == "0.0.0.0") res[k] = Zero;
-                    else res[k] = Site(Host[k], ip);
+                    res[k] = Verdict(ip) ?? Site(Host[k], ip);
                 });
                 th[k].IsBackground = true; th[k].Start();
             }
             foreach (var x in th) x.Join();
             return res;
+        }
+
+        // что сказать по ответу DNS, не заходя на сайт; null — адрес настоящий, надо проверять сайт
+        public static string Verdict(string ip)
+        {
+            if (ip == null) return NoDns;
+            if (ip == "" || ip == "0.0.0.0") return Zero;
+            return null;
         }
 
         public static int Good(string[] res) { return res == null ? -1 : res.Count(x => x == Ok); }
