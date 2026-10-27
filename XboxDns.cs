@@ -123,20 +123,37 @@ namespace HbAi.XboxDns
                 }
             }
             catch { return null; }
+            return FirstA(r);
+        }
+
+        // первый адрес IPv4 из ответа DNS; "" — адреса нет или ответ битый
+        static string FirstA(byte[] r)
+        {
             try
             {
                 int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], i = 12;
-                for (int n = 0; n < qd; n++) { while (r[i] != 0) i += r[i] + 1; i += 5; }
+                for (int n = 0; n < qd; n++) i = SkipName(r, i) + 4;
                 for (int n = 0; n < an; n++)
                 {
-                    if ((r[i] & 0xC0) == 0xC0) i += 2; else { while (r[i] != 0) i += r[i] + 1; i++; }
+                    i = SkipName(r, i);
                     int type = r[i] << 8 | r[i + 1]; int len = r[i + 8] << 8 | r[i + 9]; i += 10;
                     if (type == 1) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
                     i += len;
                 }
             }
-            catch { }
+            catch (IndexOutOfRangeException) { }
             return "";
+        }
+
+        // имя в пакете: метки, а в конце ноль или указатель на имя раньше в пакете (RFC 1035, 4.1.4)
+        static int SkipName(byte[] r, int i)
+        {
+            while (r[i] != 0)
+            {
+                if ((r[i] & 0xC0) == 0xC0) return i + 2;
+                i += r[i] + 1;
+            }
+            return i + 1;
         }
 
         public static string Site(string host, string ip)
