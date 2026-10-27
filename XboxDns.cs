@@ -11,6 +11,7 @@ using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -121,10 +122,10 @@ namespace HbAi.XboxDns
 
         public static string Resolve(string server, string host)
         {
-            var q = new System.IO.MemoryStream();
-            var w = new System.IO.BinaryWriter(q);
+            var q = new MemoryStream();
+            var w = new BinaryWriter(q);
             w.Write(new byte[] { QueryId >> 8, QueryId & 0xFF, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
-            foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(System.Text.Encoding.ASCII.GetBytes(part)); }
+            foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(Encoding.ASCII.GetBytes(part)); }
             w.Write(new byte[] { 0, 0, 1, 0, 1 });
             // UDP-пакет иногда теряется (проверка 27.10.2026: GeoHide раз в несколько запросов не отвечал),
             // поэтому спрашиваем до двух раз, прежде чем писать «DNS молчит».
@@ -202,14 +203,14 @@ namespace HbAi.XboxDns
                     using (var ssl = new System.Net.Security.SslStream(tcp.GetStream(), false, (s, c, ch, e) => true))
                     {
                         ssl.AuthenticateAsClient(host, null, (System.Security.Authentication.SslProtocols)(3072 | 12288), false);
-                        var req = System.Text.Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
+                        var req = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
                             "\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36" +
                             "\r\nAccept: text/html\r\nConnection: close\r\n\r\n");
                         ssl.Write(req, 0, req.Length); ssl.Flush();
                         var buf = new byte[16384]; int got = 0, n;
                         while (got < buf.Length && (n = ssl.Read(buf, got, buf.Length - got)) > 0)
-                        { got += n; if (System.Text.Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
-                        string head = System.Text.Encoding.ASCII.GetString(buf, 0, got).ToLowerInvariant();
+                        { got += n; if (Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
+                        string head = Encoding.ASCII.GetString(buf, 0, got).ToLowerInvariant();
                         if (head.Contains("/sorry/")) return Captcha;
                         if (head.Contains("restrict") || head.Contains("unsupported") || head.Contains("unavailable") || head.Contains("not-available")) return Blocked;
                         return Ok;
@@ -246,6 +247,7 @@ namespace HbAi.XboxDns
 
     class MainForm : Form
     {
+        const string Version = "1.21";   // та же версия в app.manifest (1.2.1.0) и в первой строке файла
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
         static readonly Color Violet = Color.FromArgb(140, 112, 255);
         static readonly Color Yellow = Color.FromArgb(255, 224, 102);
@@ -301,6 +303,12 @@ namespace HbAi.XboxDns
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { anim.Dispose(); fonts.Dispose(); }
+            base.Dispose(disposing);
+        }
+
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
 
         float WindowDpi()
@@ -315,7 +323,9 @@ namespace HbAi.XboxDns
         {
             S = ForceScale > 0 ? ForceScale : Math.Min(scale, Math.Min((wa.Height - 24f) / LH, (wa.Width - 24f) / LW));
             ClientSize = new Size((int)Math.Round(LW * S), (int)Math.Round(LH * S));
+            var old = Region;
             Region = RoundRegion(ClientRectangle, (int)Math.Round(22 * S));
+            if (old != null) old.Dispose();
             if (IsHandleCreated && Visible)
                 Location = new Point(Math.Max(wa.Left, Math.Min(Left, wa.Right - Width)), Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height)));
             Invalidate();
@@ -353,7 +363,8 @@ namespace HbAi.XboxDns
                 {
                     if (s == null) continue;
                     var data = new byte[s.Length];
-                    s.Read(data, 0, data.Length);
+                    for (int got = 0, n; got < data.Length; got += n)   // Read может отдать меньше, чем просили
+                        if ((n = s.Read(data, got, data.Length - got)) == 0) throw new EndOfStreamException(name);
                     IntPtr ptr = Marshal.AllocCoTaskMem(data.Length);
                     Marshal.Copy(data, 0, ptr, data.Length);
                     fonts.AddMemoryFont(ptr, data.Length);
@@ -370,7 +381,7 @@ namespace HbAi.XboxDns
             return new FontFamily(fallback);
         }
 
-        static Region RoundRegion(Rectangle r, int rad) { return new Region(RoundPath(r, rad)); }
+        static Region RoundRegion(Rectangle r, int rad) { using (var p = RoundPath(r, rad)) return new Region(p); }
 
         static GraphicsPath RoundPath(RectangleF r, float rad)
         {
@@ -399,7 +410,7 @@ namespace HbAi.XboxDns
             // плашка сверху
             using (var f = Pt(fBold, 11f))
             {
-                string pill = "Smart DNS 1.21 · " + Dns.Site[dnsSet];
+                string pill = "Smart DNS " + Version + " · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
@@ -591,9 +602,9 @@ namespace HbAi.XboxDns
 
         void Centered(Graphics g, string s, Font f, Brush b, float y, float maxW = 0)
         {
-            var sf = new StringFormat { Alignment = StringAlignment.Center };
             float w = maxW > 0 ? maxW : LW;
-            g.DrawString(s, f, b, new RectangleF((LW - w) / 2, y, w, 40), sf);
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center })
+                g.DrawString(s, f, b, new RectangleF((LW - w) / 2, y, w, 40), sf);
         }
 
         void OnDown(object s, MouseEventArgs e)
