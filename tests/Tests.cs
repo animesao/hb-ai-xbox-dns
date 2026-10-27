@@ -33,8 +33,7 @@ namespace HbAi.XboxDns
             SiteAnswers();
             NewVersion();
             WindowDrag();
-            PowerShellRun();
-            Ipv6();
+            Switching();
 
             int failed = 0;
             foreach (var t in all)
@@ -121,6 +120,14 @@ namespace HbAi.XboxDns
             T("DNS: ответ без адресов", () =>
                 Eq(Probe.Zero, Probe.Verdict(Ask("grok.com", q => new byte[0][]))));
 
+            T("DNS: обрезанный ответ — как молчание, а не «не пускает»", () =>
+                Eq(Probe.NoDns, Probe.Verdict(Ask("grok.com", q =>
+                {
+                    var rr = Rr(ToQuestion, 5, Name("edge.cdn.net"));
+                    rr[11] = 60;   // длина данных 60 байт, а в пакете их меньше
+                    return new[] { rr };
+                }))));
+
             T("DNS: сервер молчит", () =>
                 Eq(Probe.NoDns, Probe.Verdict(Ask("grok.com", q => null))));
         }
@@ -167,6 +174,8 @@ namespace HbAi.XboxDns
         {
             T("Адрес MagicDNS узнаётся", () => Eq(2, Dns.SetOf("109.120.132.43")));
             T("Второй адрес Comss узнаётся", () => Eq(0, Dns.SetOf("212.109.195.93")));
+            T("Новый основной адрес Comss узнаётся", () => Eq(0, Dns.SetOf("94.250.253.55")));
+            T("Прежний адрес Comss (до 1.22) узнаётся как Comss", () => Eq(0, Dns.SetOf("83.220.169.155")));
             T("IPv6 Xbox с зоной и заглавными буквами узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("2A00:AB00:1233:26::51%12")));
             T("Адрес Xbox DNS из версии 1.0 узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("111.88.96.50")));
             T("Нерабочий адрес GeoHide из версии 1.1 не выдаётся за сервис", () => Eq(-1, Dns.SetOf("193.233.112.67")));
@@ -211,6 +220,7 @@ namespace HbAi.XboxDns
             T("Та же версия — не новее", () => Eq(false, Updates.IsNewer("1.22", "1.22")));
             T("Старая версия на GitHub — не новее", () => Eq(false, Updates.IsNewer("1.21", "1.22")));
             T("Непонятный номер — не новее", () => Eq(false, Updates.IsNewer("beta", "1.22")));
+            T("Запятая в номере — не новее (а не 123)", () => Eq(false, Updates.IsNewer("1,23", "1.22")));
 
             T("Кнопка «Скачать версию …» вместо кнопки группы, когда вышла новая", () =>
             {
@@ -283,125 +293,158 @@ namespace HbAi.XboxDns
                 .Invoke(f, new object[] { new MouseEventArgs(MouseButtons.Left, 1, p.X, p.Y, 0) });
         }
 
-        // ---------- IPv6: настоящий скрипт кнопки, команды Windows подменены заглушками ----------
-        // Заглушки пишут вызовы в log.txt, состояние «IPv6 выключен на адаптере» хранят в bind.txt,
-        // поэтому несколько запусков подряд видят одно и то же состояние, как в Windows.
+        // ---------- включение и выключение: подставная Windows записывает, что с ней сделали ----------
 
-        const string Mocks =
-            "function Get-NetAdapter { $AD | ForEach-Object { [pscustomobject]@{ Name = $_; ifIndex = [array]::IndexOf($AD, $_) + 10; Status = 'Up' } } }; " +
-            "function Set-DnsClientServerAddress { param($InterfaceIndex, $ServerAddresses, [switch]$ResetServerAddresses) " +
-            "  if ($ResetServerAddresses) { Add-Content $L ('dns ' + $InterfaceIndex + ' reset') } else { Add-Content $L ('dns ' + $InterfaceIndex + ' ' + ($ServerAddresses -join ',')) } }; " +
-            "function Get-NetIPAddress { param($InterfaceIndex, $AddressFamily, $ErrorAction) " +
-            "  [pscustomobject]@{ IPAddress = 'fe80::1'; PrefixOrigin = 'WellKnown' }; " +
-            "  if ($V6) { [pscustomobject]@{ IPAddress = '2a02:2698:1::5'; PrefixOrigin = 'RouterAdvertisement' } } }; " +
-            "function Off6 { @(if (Test-Path $BindFile) { Get-Content $BindFile }) }; " +
-            "function Get-NetAdapterBinding { param($Name, $ComponentID, $ErrorAction) [pscustomobject]@{ Name = $Name; Enabled = -not ((Off6) -contains $Name) } }; " +
-            "function Disable-NetAdapterBinding { param($Name, $ComponentID, $Confirm) Add-Content $BindFile $Name; Add-Content $L ('v6off ' + $Name) }; " +
-            "function Enable-NetAdapterBinding { param($Name, $ComponentID, $Confirm, $ErrorAction) Set-Content $BindFile @(Off6 | Where-Object { $_ -ne $Name }); Add-Content $L ('v6on ' + $Name) }; " +
-            "function Clear-DnsClientCache { }; ";
-
-        sealed class Pc : IDisposable
+        sealed class FakeNet : INet
         {
-            public readonly string Dir = Path.Combine(Path.GetTempPath(), "hbdns_" + Guid.NewGuid().ToString("N"));
-            public bool V6 = true;
-            public string Adapters = "'Wi-Fi'";
-            public Pc() { Directory.CreateDirectory(Dir); }
-            public void UserTurnedOffIpv6(string name) { File.AppendAllText(Path.Combine(Dir, "bind.txt"), name + Environment.NewLine); }
+            public readonly List<string> Log = new List<string>();
+            public readonly Dictionary<string, bool> V6On = new Dictionary<string, bool>();   // GUID → IPv6 включён
+            public List<Nic> Nics = new List<Nic>();
+            public HashSet<string> Refuse = new HashSet<string>();                           // имена, где Windows отказывает
+            public bool Has6 = true;
 
-            // запустить скрипт кнопки; вернуть, что он сделал с Windows
-            public string Do(string script)
+            public FakeNet(params string[] names) { foreach (var n in names) Plug(n); }
+            public void Plug(string name)
             {
-                string log = Path.Combine(Dir, "log.txt");
-                File.WriteAllText(log, "");
-                string pre = "$m = '" + Path.Combine(Dir, "ipv6-off.txt") + "'; $L = '" + log + "'; $BindFile = '" + Path.Combine(Dir, "bind.txt") + "'; " +
-                             "$V6 = $" + V6.ToString().ToLowerInvariant() + "; $AD = @(" + Adapters + "); ";
-                var err = (string)typeof(Dns).GetMethod("Run", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { pre + Mocks + script });
-                if (err != null) throw new Exception("PowerShell: " + err);
-                return string.Join("; ", File.ReadAllLines(log));
+                Nics.Add(new Nic { Guid = "{" + name + "}", Name = name, Index = 10 + Nics.Count, HasIpv6 = Has6 });
+                if (!V6On.ContainsKey("{" + name + "}")) V6On["{" + name + "}"] = true;
             }
-            public void Dispose() { try { Directory.Delete(Dir, true); } catch { } }
+            public void Unplug(string name) { Nics.RemoveAll(n => n.Name == name); }
+            string NameOf(string g) { return g.Trim('{', '}'); }
+
+            public Nic[] Up() { return Nics.ToArray(); }
+            public void SetDns(Nic n, int v, string[] servers)
+            {
+                if (v == 6 && !V6On[n.Guid]) return;   // IPv6 выключен — IPv6-DNS у подключения нет, как в Windows
+                Log.Add((v == 6 ? "dns6 " : "dns ") + n.Index + " " + (servers == null ? "reset" : string.Join(",", servers)));
+            }
+            public Bind Ipv6(string g)
+            {
+                if (!Nics.Any(n => n.Guid == g) && !V6On.ContainsKey(g)) return null;
+                return Nics.Any(n => n.Guid == g) ? new Bind { Name = NameOf(g), On = V6On[g] } : null;
+            }
+            public void SetIpv6(string g, bool on)
+            {
+                if (Refuse.Contains(NameOf(g))) throw new InvalidOperationException("нет доступа");
+                V6On[g] = on; Log.Add((on ? "v6on " : "v6off ") + NameOf(g));
+            }
+            public void ClearCache() { }
+            public string Take() { var s = string.Join("; ", Log.ToArray()); Log.Clear(); return s; }
         }
 
-        static string Enable(int set) { return (string)typeof(Dns).GetMethod("EnableScript", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { set }); }
-        static string Disable() { return (string)typeof(Dns).GetMethod("DisableScript", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null); }
+        static string ListFile() { return Path.Combine(Path.GetTempPath(), "hbdns_" + Guid.NewGuid().ToString("N"), "ipv6-off.txt"); }
+        static string Listed(string f) { return File.Exists(f) ? string.Join(",", File.ReadAllLines(f)) : ""; }
+        static string Restore(FakeNet net, string f)
+        {
+            return (string)typeof(Dns).GetMethod("Restore6", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, new object[] { net, f, new Dns.Errors() });
+        }
         const int Magic = 2;
+        const string MagicDns = "dns6 10 reset; dns 10 109.120.132.43,94.249.177.102";
 
-        static void Ipv6()
+        static void Switching()
         {
-            T("IPv6: без IPv6 у провайдера кнопка только ставит DNS", () =>
+            T("Без IPv6 у провайдера кнопка только ставит DNS", () =>
             {
-                using (var pc = new Pc { V6 = false })
-                    Eq("dns 10 109.120.132.43,94.249.177.102", pc.Do(Enable(Magic)));
+                var net = new FakeNet { Has6 = false }; net.Plug("Wi-Fi"); string f = ListFile();
+                Eq(null, Dns.Enable(Magic, net, f));
+                Eq(MagicDns, net.Take());
             });
 
-            T("IPv6: есть IPv6, у сервиса его нет — IPv6 на адаптере выключается", () =>
+            T("Есть IPv6, у сервиса его нет — IPv6 на подключении выключается и запоминается", () =>
             {
-                using (var pc = new Pc())
-                    Eq("dns 10 109.120.132.43,94.249.177.102; v6off Wi-Fi", pc.Do(Enable(Magic)));
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Eq(null, Dns.Enable(Magic, net, f));
+                Eq(MagicDns + "; v6off Wi-Fi", net.Take());
+                Eq("{Wi-Fi}", Listed(f), "запомнено:");
             });
 
-            T("IPv6: выключение DNS возвращает IPv6", () =>
+            T("Выключение DNS возвращает IPv6 и забывает запись", () =>
             {
-                using (var pc = new Pc())
-                {
-                    pc.Do(Enable(Magic));
-                    Eq("dns 10 reset; v6on Wi-Fi", pc.Do(Disable()));
-                }
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                Eq(null, Dns.Disable(net, f));
+                Eq("dns 10 reset; v6on Wi-Fi", net.Take());
+                Eq("", Listed(f), "запомнено:");
             });
 
-            T("IPv6: смена сервиса не выключает IPv6 второй раз, выключение возвращает один раз", () =>
+            T("Смена сервиса не выключает IPv6 второй раз; второе выключение DNS IPv6 не трогает", () =>
             {
-                using (var pc = new Pc())
-                {
-                    pc.Do(Enable(Magic));
-                    Eq("dns 10 83.220.169.155,212.109.195.93", pc.Do(Enable(0)));
-                    Eq("dns 10 reset; v6on Wi-Fi", pc.Do(Disable()));
-                    Eq("dns 10 reset", pc.Do(Disable()));
-                }
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                Dns.Enable(0, net, f);
+                Eq("dns 10 94.250.253.55,212.109.195.93", net.Take());
+                Dns.Disable(net, f);
+                Eq("dns 10 reset; v6on Wi-Fi", net.Take());
+                Dns.Disable(net, f);
+                Eq("dns 10 reset; dns6 10 reset", net.Take());
             });
 
-            T("IPv6: Xbox DNS с адресами IPv6 возвращает IPv6", () =>
+            T("Xbox DNS со своими IPv6-адресами возвращает IPv6", () =>
             {
-                using (var pc = new Pc())
-                {
-                    pc.Do(Enable(Magic));
-                    Eq("dns 10 111.88.96.54,111.88.96.55,2a00:ab00:1233:26::50,2a00:ab00:1233:26::51; v6on Wi-Fi", pc.Do(Enable(Dns.XboxSet)));
-                }
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                Dns.Enable(Dns.XboxSet, net, f);
+                Eq("dns 10 111.88.96.54,111.88.96.55; v6on Wi-Fi", net.Take());
             });
 
-            T("IPv6: выключенный самим человеком IPv6 программа не включает", () =>
+            T("IPv6, выключенный самим человеком, программа не включает", () =>
             {
-                using (var pc = new Pc { Adapters = "'Wi-Fi', 'Ethernet'" })
-                {
-                    pc.UserTurnedOffIpv6("Ethernet");
-                    Eq("dns 10 109.120.132.43,94.249.177.102; v6off Wi-Fi; dns 11 109.120.132.43,94.249.177.102", pc.Do(Enable(Magic)));
-                    Eq("dns 10 reset; dns 11 reset; v6on Wi-Fi", pc.Do(Disable()));
-                }
-            });
-        }
-
-        // ---------- запуск PowerShell ----------
-
-        static void PowerShellRun()
-        {
-            T("PowerShell с большим выводом не вешает программу", () =>
-            {
-                var run = typeof(Dns).GetMethod("Run", BindingFlags.NonPublic | BindingFlags.Static);
-                string err = "не дождались";
-                var th = new Thread(() => err = (string)run.Invoke(null, new object[] { "[Console]::Out.Write('x' * 200000)" }));
-                th.IsBackground = true; th.Start();
-                if (!th.Join(30000)) throw new Exception("за 30 секунд PowerShell не завершился");
-                Eq(null, err, "ошибка:");
+                var net = new FakeNet("Wi-Fi", "Ethernet"); string f = ListFile();
+                net.V6On["{Ethernet}"] = false;
+                Dns.Enable(Magic, net, f);
+                Eq("dns6 10 reset; dns 10 109.120.132.43,94.249.177.102; v6off Wi-Fi; dns 11 109.120.132.43,94.249.177.102", net.Take());
+                Dns.Disable(net, f);
+                Eq("dns 10 reset; dns 11 reset; v6on Wi-Fi", net.Take());
             });
 
-            T("PowerShell с большим текстом ошибки не вешает программу и ошибка доходит", () =>
+            T("Адаптер отсоединили — запись остаётся, IPv6 вернётся, когда подключат", () =>
             {
-                var run = typeof(Dns).GetMethod("Run", BindingFlags.NonPublic | BindingFlags.Static);
-                string err = null;
-                var th = new Thread(() => err = (string)run.Invoke(null, new object[] { "[Console]::Error.Write('e' * 200000)" }));
-                th.IsBackground = true; th.Start();
-                if (!th.Join(30000)) throw new Exception("за 30 секунд PowerShell не завершился");
-                Eq(200000, err == null ? 0 : err.Length, "длина ошибки:");
+                var net = new FakeNet("Wi-Fi", "USB LAN"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                net.Unplug("USB LAN");
+                Dns.Disable(net, f);
+                Eq("dns 10 reset; v6on Wi-Fi", net.Take());
+                Eq("{USB LAN}", Listed(f), "запомнено:");
+                net.Plug("USB LAN");
+                Eq(null, Restore(net, f));
+                Eq("v6on USB LAN", net.Take());
+                Eq("", Listed(f), "запомнено:");
+            });
+
+            T("Windows не дала включить IPv6 — запись остаётся, ошибка видна", () =>
+            {
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                net.Refuse.Add("Wi-Fi");
+                Eq("IPv6 не включился на «Wi-Fi»: нет доступа", Dns.Disable(net, f));
+                Eq("{Wi-Fi}", Listed(f), "запомнено:");
+            });
+
+            T("Windows не дала выключить IPv6 — DNS всё равно стоит на всех подключениях, ошибка видна", () =>
+            {
+                var net = new FakeNet("Wi-Fi", "Ethernet"); string f = ListFile();
+                net.Refuse.Add("Wi-Fi");
+                Eq("IPv6 не выключился на «Wi-Fi»: нет доступа", Dns.Enable(Magic, net, f));
+                Eq("dns6 10 reset; dns 10 109.120.132.43,94.249.177.102; dns6 11 reset; dns 11 109.120.132.43,94.249.177.102; v6off Ethernet", net.Take());
+            });
+
+            T("Имя подключения с квадратными скобками и кириллицей", () =>
+            {
+                var net = new FakeNet("VPN [work]", "Беспроводная сеть"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                Dns.Disable(net, f);
+                Eq("dns 10 reset; dns 11 reset; v6on VPN [work]; v6on Беспроводная сеть", net.Take());
+            });
+
+            T("Возврат IPv6 при запуске программы DNS не трогает", () =>
+            {
+                var net = new FakeNet("Wi-Fi"); string f = ListFile();
+                Dns.Enable(Magic, net, f); net.Take();
+                Restore(net, f);
+                Eq("v6on Wi-Fi", net.Take());
+                Restore(net, f);
+                Eq("", net.Take());
             });
         }
     }

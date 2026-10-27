@@ -1,5 +1,5 @@
 // HB AI · Smart DNS 1.22 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
-// Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
+// Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11). DNS и IPv6 меняются через CIM, без PowerShell.
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -27,7 +27,7 @@ namespace HbAi.XboxDns
         public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Xbox DNS" };
         public static readonly string[] Short = { "Comss", "GeoHide", "MagicDNS", "Xbox" };
         public static readonly string[][] V4 = {
-            new[] { "83.220.169.155", "212.109.195.93" },
+            new[] { "94.250.253.55", "212.109.195.93" },
             new[] { "143.20.64.192", "45.13.237.213" },
             new[] { "109.120.132.43", "94.249.177.102" },
             new[] { "111.88.96.54", "111.88.96.55" } };
@@ -35,9 +35,9 @@ namespace HbAi.XboxDns
             new string[0], new string[0], new string[0],
             new[] { "2a00:ab00:1233:26::50", "2a00:ab00:1233:26::51" } };
         public static readonly string[] Opens = {
-            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
-            "ChatGPT, Claude, ElevenLabs, Grok; Gemini — через раз",
-            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity",
+            "ChatGPT, Claude, ElevenLabs, Grok, Perplexity; Gemini — через раз",
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity",
             "только Xbox Live, нейросети — нет" };
         public static readonly string[] Site = { "comss.ru", "geohide.ru", "magicdns.ru", "xbox-dns.ru" };
         public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://magicdns.ru/", "https://xbox-dns.ru/" };
@@ -47,6 +47,7 @@ namespace HbAi.XboxDns
         // Российский узел GeoHide (1.1) и Astracat (1.2–1.21) из России нейросети не открывают: если они стоят,
         // программа не выдаёт их за рабочий сервис, а предлагает нажать кнопку и поставить рабочие адреса.
         static readonly string[] XboxOld = { "111.88.96.50", "111.88.96.51" };
+        static readonly string[] ComssOld = { "83.220.169.155" };   // до 1.22; 27.10.2026 ещё работает, но с официальной страницы Comss убран
         static readonly string[] Stale = { "159.194.200.33", "193.233.112.67", "135.106.217.200", "85.209.2.112" };
 
         // -1 — DNS сервиса не стоит, иначе номер набора (IPv4 определяет набор)
@@ -71,6 +72,7 @@ namespace HbAi.XboxDns
             string s = address.Split('%')[0].ToLowerInvariant();
             for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
             if (XboxOld.Contains(s)) return XboxSet;
+            if (ComssOld.Contains(s)) return 0;
             return -1;
         }
 
@@ -85,68 +87,191 @@ namespace HbAi.XboxDns
                 .Any(ni => ni.GetIPProperties().DnsAddresses.Any(ip => IsStale(ip.ToString())));
         }
 
-        public static string Enable(int set) { return Run(EnableScript(set)); }
-        public static string Disable() { return Run(DisableScript()); }
+        // Включить сервис, выключить DNS сервиса, вернуть IPv6. Возвращают текст ошибок или null.
+        public static string Enable(int set) { return Enable(set, Net, Off6File); }
+        public static string Disable() { return Disable(Net, Off6File); }
+        public static string RestoreIpv6() { return File.Exists(Off6File) ? Restore6(Net, Off6File, new Errors()) : null; }
+
+        internal static INet Net = new CimNet();
 
         // IPv6. Если у провайдера есть IPv6, а у сервиса нет адресов IPv6, Windows продолжает спрашивать IPv6-DNS
         // провайдера и ходит на сайты напрямую по IPv6 — мимо Smart DNS, и сайт пишет «недоступно в вашей стране».
-        // Поэтому на время Smart DNS IPv6 на таких адаптерах выключается. Список адаптеров, где его выключила
-        // программа, лежит в ProgramData и пишется до выключения: при выключении DNS, и даже после сбоя
-        // посередине, программа включает IPv6 только там, где выключала сама.
-        const string Off6List = "if (-not $m) { $m = Join-Path $env:ProgramData 'HB AI Smart DNS\\ipv6-off.txt' }; $off = @(if (Test-Path $m) { Get-Content $m }); ";
-        const string TurnOff6 =
-            "$g = @(Get-NetIPAddress -InterfaceIndex $x.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue | Where-Object { $_.PrefixOrigin -ne 'WellKnown' -and $_.IPAddress -notlike 'fe80*' }); " +
-            "$b = Get-NetAdapterBinding -Name $x.Name -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue; " +
-            "if ($g.Count -gt 0 -and $b.Enabled) { " +
-            "if ($off -notcontains $x.Name) { New-Item -ItemType Directory -Force (Split-Path $m) | Out-Null; Add-Content $m $x.Name; $off += $x.Name }; " +
-            "Disable-NetAdapterBinding -Name $x.Name -ComponentID ms_tcpip6 -Confirm:$false } ";
-        const string Restore6 = "foreach ($n in $off) { Enable-NetAdapterBinding -Name $n -ComponentID ms_tcpip6 -Confirm:$false -ErrorAction SilentlyContinue }; if (Test-Path $m) { Remove-Item $m }; ";
+        // Поэтому на время Smart DNS IPv6 на таких подключениях выключается — тем же способом, что ставится DNS.
+        // Список подключений (их GUID: имя можно поменять) лежит в ProgramData и пишется до выключения. Запись
+        // снимается только после удачного возврата: отсоединённый адаптер или отказ Windows оставляют её, и IPv6
+        // вернётся при следующем выключении DNS или при запуске программы.
+        internal static readonly string Off6File = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "HB AI Smart DNS", "ipv6-off.txt");
 
-        internal static string EnableScript(int set)
+        internal sealed class Errors
         {
-            string all = string.Join(",", V4[set].Concat(V6[set]).Select(a => "'" + a + "'").ToArray());
-            bool own6 = V6[set].Length > 0;
-            return Off6List + "$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ServerAddresses (" + all + "); " +
-                (own6 ? "" : TurnOff6) + "}; " + (own6 ? Restore6 : "") + "Clear-DnsClientCache";
-        }
-
-        internal static string DisableScript()
-        {
-            return Off6List + "$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ResetServerAddresses }; " +
-                Restore6 + "Clear-DnsClientCache";
-        }
-
-        static string Run(string script)
-        {
-            var psi = new ProcessStartInfo("powershell.exe",
-                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"" + script.Replace("\"", "\\\"") + "\"");
-            psi.CreateNoWindow = true;
-            psi.UseShellExecute = false;
-            psi.RedirectStandardError = true;
-            psi.RedirectStandardOutput = true;
-            using (var p = Process.Start(psi))
+            readonly System.Collections.Generic.List<string> list = new System.Collections.Generic.List<string>();
+            public void Try(string what, Action a)
             {
-                // Оба потока читаем одновременно: если читать по очереди, а PowerShell забьёт буфер второго потока,
-                // процессы ждут друг друга бесконечно. И не ждём вечно, если PowerShell завис.
-                var err = p.StandardError.ReadToEndAsync();
-                var output = p.StandardOutput.ReadToEndAsync();
-                if (!p.WaitForExit(60000))
-                {
-                    try { p.Kill(); } catch { }
-                    return "PowerShell не ответил за минуту";
-                }
-                p.WaitForExit();
-                output.Wait();
-                string e = err.Result.Trim();
-                if (p.ExitCode == 0 && e.Length == 0) return null;
-                return e.Length > 0 ? e : "PowerShell завершился с кодом " + p.ExitCode;
+                try { a(); }
+                catch (Exception e) { list.Add(what + ": " + (e.InnerException ?? e).Message.Trim()); }
             }
+            public void Add(string s) { list.Add(s); }
+            public string Text { get { return list.Count == 0 ? null : string.Join("\n", list.ToArray()); } }
+        }
+
+        internal static string Enable(int set, INet net, string listFile)
+        {
+            var err = new Errors();
+            bool own6 = V6[set].Length > 0;
+            var off = ReadList(listFile);
+            foreach (var n in net.Up())
+            {
+                // Сначала IPv6, потом IPv4: сброс DNS через CIM сбрасывает подключение целиком, оба протокола
+                // (проверено 27.10.2026 на Windows 11), и поставленный раньше IPv4 пропадал.
+                // Свой IPv6 есть только у Xbox DNS; у остальных IPv6-DNS возвращается к роутеру, а не остаётся от прошлого сервиса.
+                err.Try("IPv6-DNS на «" + n.Name + "»", () => net.SetDns(n, 6, own6 ? V6[set] : null));
+                err.Try("DNS на «" + n.Name + "»", () => net.SetDns(n, 4, V4[set]));
+                if (own6 || !n.HasIpv6) continue;
+                var b = net.Ipv6(n.Guid);
+                if (b == null || !b.On) continue;
+                if (!off.Contains(n.Guid)) { off.Add(n.Guid); WriteList(listFile, off); }
+                err.Try("IPv6 не выключился на «" + n.Name + "»", () => net.SetIpv6(n.Guid, false));
+            }
+            if (own6) Restore6(net, listFile, err);
+            err.Try("Кэш DNS", net.ClearCache);
+            return err.Text;
+        }
+
+        internal static string Disable(INet net, string listFile)
+        {
+            var err = new Errors();
+            foreach (var n in net.Up())
+            {
+                err.Try("DNS на «" + n.Name + "»", () => net.SetDns(n, 4, null));
+                err.Try("IPv6-DNS на «" + n.Name + "»", () => net.SetDns(n, 6, null));
+            }
+            Restore6(net, listFile, err);
+            err.Try("Кэш DNS", net.ClearCache);
+            return err.Text;
+        }
+
+        // включить IPv6 там, где его выключила программа; кого не вышло — оставить в списке
+        static string Restore6(INet net, string listFile, Errors err)
+        {
+            var left = new System.Collections.Generic.List<string>();
+            foreach (var g in ReadList(listFile))
+            {
+                var b = net.Ipv6(g);
+                if (b == null) { left.Add(g); continue; }          // адаптер отсоединён — вернём, когда появится
+                if (b.On) continue;                                // уже включён
+                try { net.SetIpv6(g, true); }
+                catch (Exception e) { left.Add(g); err.Add("IPv6 не включился на «" + b.Name + "»: " + (e.InnerException ?? e).Message.Trim()); }
+            }
+            WriteList(listFile, left);
+            return err.Text;
+        }
+
+        static System.Collections.Generic.List<string> ReadList(string f)
+        {
+            return File.Exists(f) ? File.ReadAllLines(f).Select(l => l.Trim()).Where(l => l.Length > 0).ToList() : new System.Collections.Generic.List<string>();
+        }
+
+        static void WriteList(string f, System.Collections.Generic.List<string> ids)
+        {
+            if (ids.Count == 0) { if (File.Exists(f)) File.Delete(f); return; }
+            Directory.CreateDirectory(Path.GetDirectoryName(f));
+            File.WriteAllLines(f, ids.ToArray());
         }
 
         public static bool IsAdmin()
         {
             using (var id = WindowsIdentity.GetCurrent())
                 return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+    }
+
+    // Подключение, как его видит программа
+    sealed class Nic { public string Guid, Name; public int Index; public bool HasIpv6; }
+    sealed class Bind { public string Name; public bool On; }
+
+    // Всё, чем программа меняет Windows. В тестах подменяется записью в журнал.
+    interface INet
+    {
+        Nic[] Up();                                   // работающие подключения
+        void SetDns(Nic n, int ipVersion, string[] servers);   // servers == null — DNS от роутера
+        Bind Ipv6(string guid);                       // протокол IPv6 на подключении; null — подключения нет
+        void SetIpv6(string guid, bool on);
+        void ClearCache();
+    }
+
+    // Настоящая Windows: через CIM, на нём же работают команды Set-DnsClientServerAddress и
+    // Disable-NetAdapterBinding. PowerShell программа не запускает.
+    sealed class CimNet : INet
+    {
+        const string Ns = @"root\StandardCimv2";
+
+        public Nic[] Up()
+        {
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .Where(ni => ni.OperationalStatus == OperationalStatus.Up && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                          && ni.NetworkInterfaceType != NetworkInterfaceType.Tunnel)
+                .Select(ni =>
+                {
+                    var p = ni.GetIPProperties();
+                    int index = -1;
+                    try { index = p.GetIPv4Properties().Index; } catch (NetworkInformationException) { }
+                    if (index < 0) try { index = p.GetIPv6Properties().Index; } catch (NetworkInformationException) { }
+                    return new Nic
+                    {
+                        Guid = ni.Id.ToUpperInvariant(), Name = ni.Name, Index = index,
+                        HasIpv6 = p.UnicastAddresses.Any(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                                                           && !a.Address.IsIPv6LinkLocal && !System.Net.IPAddress.IsLoopback(a.Address))
+                    };
+                })
+                .Where(n => n.Index >= 0).ToArray();
+        }
+
+        public void SetDns(Nic n, int ipVersion, string[] servers)
+        {
+            using (var s = Microsoft.Management.Infrastructure.CimSession.Create(null))
+            {
+                var inst = s.QueryInstances(Ns, "WQL", "SELECT * FROM MSFT_DNSClientServerAddress WHERE InterfaceIndex = " + n.Index +
+                                                      " AND AddressFamily = " + (ipVersion == 6 ? 23 : 2)).FirstOrDefault();
+                if (inst == null) return;   // у подключения нет этого протокола (например, IPv6 выключен)
+                using (var o = new Microsoft.Management.Infrastructure.Options.CimOperationOptions())
+                {
+                    if (servers == null) o.SetCustomOption("ResetServerAddresses", true, false);
+                    else o.SetCustomOption("ServerAddresses", servers, Microsoft.Management.Infrastructure.CimType.StringArray, false);
+                    s.ModifyInstance(Ns, inst, o);
+                }
+            }
+        }
+
+        static Microsoft.Management.Infrastructure.CimInstance Binding(Microsoft.Management.Infrastructure.CimSession s, string guid)
+        {
+            return s.QueryInstances(Ns, "WQL", "SELECT * FROM MSFT_NetAdapterBindingSettingData WHERE InstanceID = '" +
+                                    guid.Replace("'", "") + "::ms_tcpip6'").FirstOrDefault();
+        }
+
+        public Bind Ipv6(string guid)
+        {
+            using (var s = Microsoft.Management.Infrastructure.CimSession.Create(null))
+            {
+                var b = Binding(s, guid);
+                return b == null ? null : new Bind { Name = (string)b.CimInstanceProperties["Name"].Value, On = (bool)b.CimInstanceProperties["Enabled"].Value };
+            }
+        }
+
+        public void SetIpv6(string guid, bool on)
+        {
+            using (var s = Microsoft.Management.Infrastructure.CimSession.Create(null))
+            {
+                var b = Binding(s, guid);
+                if (b == null) throw new InvalidOperationException("подключение не найдено");
+                var r = s.InvokeMethod(Ns, b, on ? "Enable" : "Disable", new Microsoft.Management.Infrastructure.CimMethodParametersCollection());
+                if (r.ReturnValue != null && Convert.ToInt64(r.ReturnValue.Value) != 0) throw new InvalidOperationException("Windows вернула код " + r.ReturnValue.Value);
+            }
+        }
+
+        public void ClearCache()
+        {
+            using (var s = Microsoft.Management.Infrastructure.CimSession.Create(null))
+                s.InvokeMethod(Ns, "MSFT_DNSClientCache", "Clear", new Microsoft.Management.Infrastructure.CimMethodParametersCollection());
         }
     }
 
@@ -207,6 +332,7 @@ namespace HbAi.XboxDns
                     i += 10;
                     if (type == 1 && cls == 1 && len == 4) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
                     i += len;
+                    if (i > r.Length) return null;   // запись длиннее пакета — ответ обрезан
                 }
                 return "";
             }
@@ -364,6 +490,7 @@ namespace HbAi.XboxDns
             active = cur >= 0;
             dnsSet = cur >= 0 ? cur : 0;
             stale = !active && Dns.StaleActive();
+            if (!active && ForceScale <= 0) ThreadPool.QueueUserWorkItem(_ => Dns.RestoreIpv6());
             // о новой версии узнаём в фоне; при снимке окна (--shot) в сеть не ходим
             if (ForceScale <= 0)
                 ThreadPool.QueueUserWorkItem(_ => { string v = Updates.Newer(Version); if (v != null) Ui(() => { update = v; Invalidate(); }); });
@@ -371,6 +498,7 @@ namespace HbAi.XboxDns
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
+            MouseUp += (s, e) => dragging = false;
         }
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
@@ -737,7 +865,8 @@ namespace HbAi.XboxDns
                 || new[] { rClose, rMin, rGroup, rSite, rBrand, rVk, rCheck, rBest }.Any(r => r.Contains(lp));
         }
 
-        static void Open(string url) { try { Process.Start(url); } catch { } }
+        // через проводник: браузер запустится с правами пользователя, а не администратора, как сама программа
+        static void Open(string url) { try { Process.Start("explorer.exe", "\"" + url + "\""); } catch { } }
 
         // смена набора: если DNS уже включён, сразу переключаем адреса
         void PickSet(int k)
@@ -785,7 +914,7 @@ namespace HbAi.XboxDns
                     checking = false; check = all[best]; checkSet = best;
                     string note = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
                     // если не открывает ни один — DNS не трогаем; пока идёт включение/выключение — тоже
-                    if (good > 0 && !busy && best != dnsSet)
+                    if (good > 0 && !busy && dnsSet == current && best != dnsSet)
                     {
                         dnsSet = best;
                         if (active) { Apply(true, note); return; }
@@ -823,7 +952,9 @@ namespace HbAi.XboxDns
                     if (active) dnsSet = now;
                     // Раньше ошибку показывали, только если не совпало «включён/выключен». При смене сервиса
                     // на включённом DNS сбой проходил молча: оставался старый сервис, а подпись не менялась.
-                    if (!done)
+                    if (done && err != null)
+                        error = "DNS включён, но: " + FirstLine(err);
+                    else if (!done)
                         error = !Dns.IsAdmin() ? "Не получилось: запустите от имени администратора"
                               : err != null ? "Не получилось поменять DNS: " + FirstLine(err)
                               : "Не получилось поменять DNS, попробуйте ещё раз";
@@ -867,8 +998,8 @@ namespace HbAi.XboxDns
         {
             decimal a, b;
             var ci = System.Globalization.CultureInfo.InvariantCulture;
-            return decimal.TryParse(latest, System.Globalization.NumberStyles.Number, ci, out a)
-                && decimal.TryParse(current, System.Globalization.NumberStyles.Number, ci, out b) && a > b;
+            return decimal.TryParse(latest, System.Globalization.NumberStyles.AllowDecimalPoint, ci, out a)
+                && decimal.TryParse(current, System.Globalization.NumberStyles.AllowDecimalPoint, ci, out b) && a > b;
         }
 
         // номер новой версии или null
