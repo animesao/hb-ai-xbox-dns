@@ -217,7 +217,8 @@ namespace HbAi.XboxDns
         Rectangle rToggle, rClose, rMin, rSite, rGroup, rBrand, rVk, rCheck, rBest;
         readonly Rectangle[] rSeg = new Rectangle[Dns.Count];
         string[] check; int checkSet = -1; bool checking; string bestNote;
-        Point dragFrom;
+        // окно тянется, только если кнопку мыши нажали на пустом месте
+        Point dragFrom; bool dragging;
         // Разметка в «логических» пикселях окна 440×852 (как при 100 %), на экран всё умножается на S = DPI / 96.
         const int LW = 440, LH = 852;
         float S = 1f;
@@ -250,6 +251,7 @@ namespace HbAi.XboxDns
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
+            MouseUp += (s, e) => dragging = false;
         }
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
@@ -551,6 +553,7 @@ namespace HbAi.XboxDns
 
         void OnDown(object s, MouseEventArgs e)
         {
+            dragging = false;
             if (e.Button != MouseButtons.Left) return;
             var lp = ToLogical(e.Location);
             if (rClose.Contains(lp)) { Close(); return; }
@@ -558,26 +561,33 @@ namespace HbAi.XboxDns
             if (rGroup.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
             if (rSite.Contains(lp)) { Open(Dns.Url[dnsSet]); return; }
             if (rBrand.Contains(lp) || rVk.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
-            var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
-            double dx = lp.X - c.X, dy = lp.Y - c.Y;
-            if (dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0) { Toggle(); return; }
+            if (InToggle(lp)) { Toggle(); return; }
             for (int k = 0; k < Dns.Count; k++)
                 if (rSeg[k].Contains(lp)) { PickSet(k); return; }
             if (rCheck.Contains(lp)) { RunCheck(dnsSet); return; }
             if (rBest.Contains(lp)) { RunBest(); return; }
+            dragging = true;
             dragFrom = e.Location;
         }
 
         void OnMove(object s, MouseEventArgs e)
         {
-            var lp = ToLogical(e.Location);
+            Cursor = OverControl(ToLogical(e.Location)) && !busy ? Cursors.Hand : Cursors.Default;
+            if (dragging && e.Button == MouseButtons.Left)
+                Location = new Point(Location.X + e.X - dragFrom.X, Location.Y + e.Y - dragFrom.Y);
+        }
+
+        bool InToggle(Point lp)
+        {
             var c = new Point(rToggle.X + rToggle.Width / 2, rToggle.Y + rToggle.Height / 2);
             double dx = lp.X - c.X, dy = lp.Y - c.Y;
-            bool hand = rClose.Contains(lp) || rMin.Contains(lp) || rGroup.Contains(lp) || rSite.Contains(lp) || rBrand.Contains(lp) || rVk.Contains(lp) || rSeg.Any(r => r.Contains(lp)) || rCheck.Contains(lp) || rBest.Contains(lp)
-                        || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
-            Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
-            if (e.Button == MouseButtons.Left && !hand)
-                Location = new Point(Location.X + e.X - dragFrom.X, Location.Y + e.Y - dragFrom.Y);
+            return dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
+        }
+
+        bool OverControl(Point lp)
+        {
+            return InToggle(lp) || rSeg.Any(r => r.Contains(lp))
+                || new[] { rClose, rMin, rGroup, rSite, rBrand, rVk, rCheck, rBest }.Any(r => r.Contains(lp));
         }
 
         static void Open(string url) { try { Process.Start(url); } catch { } }
