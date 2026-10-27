@@ -56,12 +56,20 @@ namespace HbAi.XboxDns
                     continue;
                 foreach (var ip in ni.GetIPProperties().DnsAddresses)
                 {
-                    string s = ip.ToString().Split('%')[0].ToLowerInvariant();
-                    for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
-                    if (XboxOld.Contains(s)) return XboxSet;
-                    if (GeoHideOld.Contains(s)) return 1;
+                    int k = SetOf(ip.ToString());
+                    if (k >= 0) return k;
                 }
             }
+            return -1;
+        }
+
+        // какому сервису принадлежит адрес DNS; -1 — чужой адрес
+        public static int SetOf(string address)
+        {
+            string s = address.Split('%')[0].ToLowerInvariant();
+            for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
+            if (XboxOld.Contains(s)) return XboxSet;
+            if (GeoHideOld.Contains(s)) return 1;
             return -1;
         }
 
@@ -176,14 +184,20 @@ namespace HbAi.XboxDns
                         var buf = new byte[16384]; int got = 0, n;
                         while (got < buf.Length && (n = ssl.Read(buf, got, buf.Length - got)) > 0)
                         { got += n; if (System.Text.Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
-                        string head = System.Text.Encoding.ASCII.GetString(buf, 0, got).ToLowerInvariant();
-                        if (head.Contains("/sorry/")) return Captcha;
-                        if (head.Contains("restrict") || head.Contains("unsupported") || head.Contains("unavailable") || head.Contains("not-available")) return Blocked;
-                        return Ok;
+                        return Classify(System.Text.Encoding.ASCII.GetString(buf, 0, got));
                     }
                 }
             }
             catch { return NoLink; }
+        }
+
+        // что видит человек по заголовкам ответа сайта: капча Google, страница «недоступно в вашей стране» или сайт
+        public static string Classify(string head)
+        {
+            head = head.ToLowerInvariant();
+            if (head.Contains("/sorry/")) return Captcha;
+            if (new[] { "restrict", "unsupported", "unavailable", "not-available" }.Any(head.Contains)) return Blocked;
+            return Ok;
         }
 
         // результат по каждому сайту для набора DNS

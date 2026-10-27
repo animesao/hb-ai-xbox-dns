@@ -29,6 +29,8 @@ namespace HbAi.XboxDns
         {
             DnsReplies();
             BestService();
+            KnownAddresses();
+            SiteAnswers();
             WindowDrag();
             PowerShellRun();
 
@@ -143,6 +145,35 @@ namespace HbAi.XboxDns
                 Eq(1, Probe.Best(new[] {
                     new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok },
                     Res(5), null, null, null })));
+        }
+
+        // ---------- какой сервис стоит в Windows ----------
+
+        static void KnownAddresses()
+        {
+            T("Адрес MagicDNS узнаётся", () => Eq(2, Dns.SetOf("109.120.132.43")));
+            T("Второй адрес Comss узнаётся", () => Eq(0, Dns.SetOf("212.109.195.93")));
+            T("IPv6 Xbox с зоной и заглавными буквами узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("2A00:AB00:1233:26::51%12")));
+            T("Адрес Xbox DNS из версии 1.0 узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("111.88.96.50")));
+            T("Адрес GeoHide из версии 1.1 узнаётся", () => Eq(1, Dns.SetOf("193.233.112.67")));
+            T("DNS роутера — не сервис", () => Eq(-1, Dns.SetOf("192.168.1.1")));
+            T("Google 8.8.8.8 — не сервис", () => Eq(-1, Dns.SetOf("8.8.8.8")));
+        }
+
+        // ---------- ответ сайта ----------
+
+        static void SiteAnswers()
+        {
+            T("Обычная страница — открывается", () =>
+                Eq(Probe.Ok, Probe.Classify("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n")));
+            T("Редирект на капчу Google", () =>
+                Eq(Probe.Captcha, Probe.Classify("HTTP/1.1 302 Found\r\nLocation: https://www.google.com/sorry/index?continue=x\r\n\r\n")));
+            T("Редирект на страницу unsupported_country", () =>
+                Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302 Found\r\nLocation: https://chatgpt.com/unsupported_country\r\n\r\n")));
+            T("Редирект на geo-restricted, заголовок заглавными", () =>
+                Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 307\r\nLOCATION: /geo-restricted\r\n\r\n")));
+            T("Редирект на страницу …-unavailable-in-region", () =>
+                Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /app-unavailable-in-region\r\n\r\n")));
         }
 
         // ---------- окно: перетаскивание ----------
