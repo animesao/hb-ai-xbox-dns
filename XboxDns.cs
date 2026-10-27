@@ -249,6 +249,13 @@ namespace HbAi.XboxDns
         static readonly Color Soft = Color.FromArgb(207, 200, 255);
         static readonly Color CardBg = Color.FromArgb(17, 17, 24);
         static readonly Color CardLine = Color.FromArgb(38, 38, 48);
+        static readonly Color Ink = Color.FromArgb(11, 11, 16);          // тёмный текст на жёлтом
+        static readonly Color Light = Color.FromArgb(233, 233, 242);
+        static readonly Color OkGreen = Color.FromArgb(80, 200, 130);
+        static readonly Color Bad = Color.FromArgb(255, 138, 138);
+        static readonly Color BadDot = Color.FromArgb(255, 110, 110);
+        static readonly Color VioletFill = Color.FromArgb(40, 124, 92, 255);
+        static readonly Color VioletLine = Color.FromArgb(115, 124, 92, 255);
 
         readonly PrivateFontCollection fonts = new PrivateFontCollection();
         FontFamily fHead, fBold, fMed;
@@ -387,27 +394,43 @@ namespace HbAi.XboxDns
             g.ScaleTransform(S, S);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            int W = LW;
 
             // фон: мягкое фиолетовое свечение, как на обложках сообщества
-            Glow(g, new RectangleF(W - 330, -260, 560, 520), Color.FromArgb(95, 124, 92, 255));
+            Glow(g, new RectangleF(LW - 330, -260, 560, 520), Color.FromArgb(95, 124, 92, 255));
             Glow(g, new RectangleF(-260, 460, 520, 460), Color.FromArgb(55, 60, 140, 255));
 
-            // плашка сверху
+            DrawTop(g);
+            DrawToggle(g);
+            DrawStatus(g);
+            DrawSets(g);
+            DrawCheck(g);
+            DrawFooter(g);
+        }
+
+        static readonly StringFormat Center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+        // скруглённая плашка с заливкой и обводкой
+        static void Panel(Graphics g, RectangleF r, float rad, Color fill, Color line)
+        {
+            using (var path = RoundPath(r, rad))
+            using (var b = new SolidBrush(fill))
+            using (var pen = new Pen(line))
+            { g.FillPath(b, path); g.DrawPath(pen, path); }
+        }
+
+        // плашка с сайтом сервиса, крестик, «свернуть» и заголовок
+        void DrawTop(Graphics g)
+        {
             using (var f = Pt(fBold, 11f))
             {
                 string pill = "Smart DNS 1.21 · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
-                using (var path = RoundPath(pr, 17))
-                using (var b = new SolidBrush(Color.FromArgb(40, 124, 92, 255)))
-                using (var pen = new Pen(Color.FromArgb(115, 124, 92, 255)))
-                { g.FillPath(b, path); g.DrawPath(pen, path); }
+                Panel(g, pr, 17, VioletFill, VioletLine);
                 using (var b = new SolidBrush(Yellow)) g.FillEllipse(b, pr.X + 16, pr.Y + 12, 10, 10);
                 using (var b = new SolidBrush(Soft)) g.DrawString(pill, f, b, pr.X + 32, pr.Y + (34 - sz.Height) / 2 + 1);
             }
-            // крестик и чёрточка «свернуть»
             using (var pen = new Pen(Muted, 2f))
             {
                 int c = 9;
@@ -417,37 +440,41 @@ namespace HbAi.XboxDns
                 var n = new Point(rMin.X + rMin.Width / 2, rMin.Y + rMin.Height / 2);
                 g.DrawLine(pen, n.X - c, n.Y + 4, n.X + c, n.Y + 4);
             }
-
-            // заголовок
             using (var f = Pt(fHead, 22f))
             using (var b = new SolidBrush(Color.White))
             {
                 g.DrawString("Доступ", f, b, 28, 82);
-                var w = g.MeasureString("Доступ ", f).Width;
                 string hl = "к сервисам";
                 var sz = g.MeasureString(hl, f);
                 using (var path = RoundPath(new RectangleF(28, 124, sz.Width + 6, sz.Height - 2), 8))
                 using (var yb = new SolidBrush(Yellow)) g.FillPath(yb, path);
-                using (var db = new SolidBrush(Color.FromArgb(11, 11, 16))) g.DrawString(hl, f, db, 31, 124);
+                using (var db = new SolidBrush(Ink)) g.DrawString(hl, f, db, 31, 124);
             }
+        }
 
-            DrawToggle(g);
-
-            // статус
+        void DrawStatus(Graphics g)
+        {
             string status = busy ? "Применяем настройки…" : active ? "DNS включён" : "DNS выключен";
-            string sub = error != null ? error : bestNote != null ? bestNote : busy ? "Секунду" : active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
             using (var f = Pt(fHead, 15f))
             using (var b = new SolidBrush(active && !busy ? Yellow : Color.White))
                 Centered(g, status, f, b, 420);
             using (var f = Pt(fMed, 10.5f))
-            using (var b = new SolidBrush(error != null ? Color.FromArgb(255, 138, 138) : Muted))
-                Centered(g, sub, f, b, 454, W - 60);
+            using (var b = new SolidBrush(error != null ? Bad : Muted))
+                Centered(g, StatusNote(), f, b, 454, LW - 60);
+        }
 
-            // выбор набора адресов
-            using (var path = RoundPath(new RectangleF(28, 500, W - 56, 56), 16))
-            using (var b = new SolidBrush(CardBg))
-            using (var pen = new Pen(CardLine))
-            { g.FillPath(b, path); g.DrawPath(pen, path); }
+        string StatusNote()
+        {
+            if (error != null) return error;
+            if (bestNote != null) return bestNote;
+            if (busy) return "Секунду";
+            return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
+        }
+
+        // выбор сервиса
+        void DrawSets(Graphics g)
+        {
+            Panel(g, new RectangleF(28, 500, LW - 56, 56), 16, CardBg, CardLine);
             for (int k = 0; k < Dns.Count; k++)
             {
                 var sr = new RectangleF(rSeg[k].X + 4, rSeg[k].Y + 5, rSeg[k].Width - 8, rSeg[k].Height - 10);
@@ -455,28 +482,25 @@ namespace HbAi.XboxDns
                 if (on)
                     using (var path = RoundPath(sr, 12))
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
-                string label = Dns.Short[k];
                 using (var f = Pt(fBold, 8.5f))
-                using (var b = new SolidBrush(on ? Color.FromArgb(11, 11, 16) : Soft))
-                using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                    g.DrawString(label, f, b, sr, sf);
+                using (var b = new SolidBrush(on ? Ink : Soft))
+                    g.DrawString(Dns.Short[k], f, b, sr, Center);
             }
+        }
 
-            // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
-            var card = new RectangleF(28, 574, W - 56, 150);
-            using (var path = RoundPath(card, 16))
-            using (var b = new SolidBrush(CardBg))
-            using (var pen = new Pen(CardLine))
-            { g.FillPath(b, path); g.DrawPath(pen, path); }
+        // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
+        void DrawCheck(Graphics g)
+        {
+            var card = new RectangleF(28, 574, LW - 56, 150);
+            Panel(g, card, 16, CardBg, CardLine);
             using (var fl = Pt(fBold, 9.5f))
             using (var fv = Pt(fMed, 10f))
             using (var bl = new SolidBrush(Violet))
-            using (var bv = new SolidBrush(Color.FromArgb(233, 233, 242)))
+            using (var bv = new SolidBrush(Light))
             {
                 g.DrawString("DNS", fl, bl, card.X + 18, card.Y + 14);
                 g.DrawString(string.Join("  /  ", Dns.V4[dnsSet]), fv, bv, card.X + 58, card.Y + 12);
             }
-            // кнопки «Проверить» и «Найти лучший»
             rCheck = new Rectangle((int)card.X + 18, (int)card.Y + 40, 160, 30);
             rBest = new Rectangle((int)card.Right - 18 - 160, (int)card.Y + 40, 160, 30);
             DrawSmall(g, rCheck, checking && checkSet == dnsSet ? "Проверяем…" : "Проверить " + Dns.Short[dnsSet], !checking);
@@ -490,26 +514,27 @@ namespace HbAi.XboxDns
                 {
                     float x = card.X + 18 + (i / 3) * ((card.Width - 36) / 2), y = card.Y + 82 + (i % 3) * 22;
                     string r = forThis ? check[i] : null;
-                    Color dot = r == null ? Color.FromArgb(70, 70, 88) : r == Probe.Ok ? Color.FromArgb(80, 200, 130) : r == Probe.Captcha ? Yellow : Color.FromArgb(255, 110, 110);
-                    using (var b = new SolidBrush(dot)) g.FillEllipse(b, x, y + 4, 9, 9);
-                    using (var b = new SolidBrush(Color.FromArgb(233, 233, 242))) g.DrawString(Probe.Label[i], fn, b, x + 16, y);
+                    using (var b = new SolidBrush(r == null ? Color.FromArgb(70, 70, 88) : ResultColor(r, BadDot))) g.FillEllipse(b, x, y + 4, 9, 9);
+                    using (var b = new SolidBrush(Light)) g.DrawString(Probe.Label[i], fn, b, x + 16, y);
                     if (r != null)
-                        using (var b = new SolidBrush(r == Probe.Ok ? Color.FromArgb(80, 200, 130) : r == Probe.Captcha ? Yellow : Color.FromArgb(255, 138, 138)))
+                        using (var b = new SolidBrush(ResultColor(r, Bad)))
                             g.DrawString(r, fs, b, x + 92, y + 2);
                 }
             }
+        }
 
-            // кнопка группы ВКонтакте
-            rVk = new Rectangle(28, 742, W - 56, 56);
+        static Color ResultColor(string r, Color bad) { return r == Probe.Ok ? OkGreen : r == Probe.Captcha ? Yellow : bad; }
+
+        // кнопка группы ВКонтакте и подвал
+        void DrawFooter(Graphics g)
+        {
+            rVk = new Rectangle(28, 742, LW - 56, 56);
             using (var path = RoundPath(rVk, 16))
             using (var b = new LinearGradientBrush(rVk, Color.FromArgb(124, 92, 255), Color.FromArgb(76, 124, 255), LinearGradientMode.Horizontal))
                 g.FillPath(b, path);
             using (var f = Pt(fHead, 11.5f))
             using (var b = new SolidBrush(Color.White))
-            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                g.DrawString("Наша группа ВКонтакте  →", f, b, rVk, sf);
-
-            // подвал
+                g.DrawString("Наша группа ВКонтакте  →", f, b, rVk, Center);
             using (var fb = Pt(fHead, 13f))
             using (var bb = new SolidBrush(Violet))
                 g.DrawString("HB AI", fb, bb, 28, 812);
@@ -518,7 +543,7 @@ namespace HbAi.XboxDns
             {
                 var t = "vk.com/neiroseti_ai";
                 var sz = g.MeasureString(t, f);
-                rGroup = new Rectangle((int)(W - 28 - sz.Width), 817, (int)sz.Width, (int)sz.Height);
+                rGroup = new Rectangle((int)(LW - 28 - sz.Width), 817, (int)sz.Width, (int)sz.Height);
                 g.DrawString(t, f, b, rGroup.X, rGroup.Y);
                 rBrand = new Rectangle(28, 810, 110, 30);
             }
@@ -526,14 +551,10 @@ namespace HbAi.XboxDns
 
         void DrawSmall(Graphics g, Rectangle r, string text, bool enabled)
         {
-            using (var path = RoundPath(r, 10))
-            using (var b = new SolidBrush(enabled ? Color.FromArgb(40, 124, 92, 255) : Color.FromArgb(24, 24, 32)))
-            using (var pen = new Pen(enabled ? Color.FromArgb(115, 124, 92, 255) : CardLine))
-            { g.FillPath(b, path); g.DrawPath(pen, path); }
+            Panel(g, r, 10, enabled ? VioletFill : Color.FromArgb(24, 24, 32), enabled ? VioletLine : CardLine);
             using (var f = Pt(fBold, 9f))
             using (var b = new SolidBrush(enabled ? Soft : Muted))
-            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                g.DrawString(text, f, b, r, sf);
+                g.DrawString(text, f, b, r, Center);
         }
 
         void DrawToggle(Graphics g)
@@ -558,13 +579,13 @@ namespace HbAi.XboxDns
             }
             // значок питания
             var c = new PointF(r.X + r.Width / 2, r.Y + r.Height / 2 - 14);
-            using (var pen = new Pen(active ? Color.FromArgb(11, 11, 16) : Color.White, 7f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (var pen = new Pen(active ? Ink : Color.White, 7f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             {
                 g.DrawArc(pen, c.X - 32, c.Y - 32, 64, 64, -60, 300);
                 g.DrawLine(pen, c.X, c.Y - 40, c.X, c.Y - 6);
             }
             using (var f = Pt(fHead, 13f))
-            using (var b = new SolidBrush(active ? Color.FromArgb(11, 11, 16) : Soft))
+            using (var b = new SolidBrush(active ? Ink : Soft))
             {
                 string t = active ? "ВКЛ" : "ВЫКЛ";
                 var sz = g.MeasureString(t, f);
