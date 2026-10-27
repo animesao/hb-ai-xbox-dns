@@ -10,6 +10,7 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -86,11 +87,27 @@ namespace HbAi.XboxDns
             psi.RedirectStandardOutput = true;
             using (var p = Process.Start(psi))
             {
-                string err = p.StandardError.ReadToEnd();
-                p.StandardOutput.ReadToEnd();
+                // Оба потока читаем одновременно: если читать по очереди, а PowerShell забьёт буфер второго потока,
+                // процессы ждут друг друга бесконечно. И не ждём вечно, если PowerShell завис.
+                var err = p.StandardError.ReadToEndAsync();
+                var output = p.StandardOutput.ReadToEndAsync();
+                if (!p.WaitForExit(60000))
+                {
+                    try { p.Kill(); } catch { }
+                    return "PowerShell не ответил за минуту";
+                }
                 p.WaitForExit();
-                return p.ExitCode == 0 && err.Trim().Length == 0 ? null : err.Trim();
+                output.Wait();
+                string e = err.Result.Trim();
+                if (p.ExitCode == 0 && e.Length == 0) return null;
+                return e.Length > 0 ? e : "PowerShell завершился с кодом " + p.ExitCode;
             }
+        }
+
+        public static bool IsAdmin()
+        {
+            using (var id = WindowsIdentity.GetCurrent())
+                return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
         }
     }
 
@@ -106,35 +123,70 @@ namespace HbAi.XboxDns
         {
             var q = new System.IO.MemoryStream();
             var w = new System.IO.BinaryWriter(q);
-            w.Write(new byte[] { 0x2a, 0x2a, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
+            w.Write(new byte[] { QueryId >> 8, QueryId & 0xFF, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
             foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(System.Text.Encoding.ASCII.GetBytes(part)); }
             w.Write(new byte[] { 0, 0, 1, 0, 1 });
-            byte[] r;
-            try
+            // UDP-пакет иногда теряется (проверка 27.10.2026: GeoHide раз в несколько запросов не отвечал),
+            // поэтому спрашиваем до двух раз, прежде чем писать «DNS молчит».
+            var data = q.ToArray();
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                using (var u = new System.Net.Sockets.UdpClient())
+                try
                 {
-                    u.Client.ReceiveTimeout = 3000;
-                    var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(server), 53);
-                    var data = q.ToArray(); u.Send(data, data.Length, ep);
-                    r = u.Receive(ref ep);
+                    using (var u = new System.Net.Sockets.UdpClient())
+                    {
+                        u.Client.ReceiveTimeout = 2500;
+                        var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(server), 53);
+                        u.Send(data, data.Length, ep);
+                        string ip = ParseA(u.Receive(ref ep));
+                        if (ip != null) return ip;
+                    }
                 }
+                catch (System.Net.Sockets.SocketException) { }
             }
-            catch { return null; }
+            return null;
+        }
+
+        const int QueryId = 0x2a2a;
+
+        // Первый адрес IPv4 из ответа DNS. "" — сервер ответил, но адреса нет (NXDOMAIN или пустой ответ);
+        // null — ответ не наш, битый или сервер отказал (тогда пробуем второй адрес сервиса).
+        internal static string ParseA(byte[] r)
+        {
             try
             {
+                if (r.Length < 12 || (r[0] << 8 | r[1]) != QueryId || (r[2] & 0x80) == 0) return null;
+                int rcode = r[3] & 0x0F;
+                if (rcode == 3) return "";
+                if (rcode != 0) return null;
                 int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], i = 12;
-                for (int n = 0; n < qd; n++) { while (r[i] != 0) i += r[i] + 1; i += 5; }
+                for (int n = 0; n < qd; n++) i = SkipName(r, i) + 4;
                 for (int n = 0; n < an; n++)
                 {
-                    if ((r[i] & 0xC0) == 0xC0) i += 2; else { while (r[i] != 0) i += r[i] + 1; i++; }
-                    int type = r[i] << 8 | r[i + 1]; int len = r[i + 8] << 8 | r[i + 9]; i += 10;
-                    if (type == 1) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
+                    i = SkipName(r, i);
+                    int type = r[i] << 8 | r[i + 1], cls = r[i + 2] << 8 | r[i + 3], len = r[i + 8] << 8 | r[i + 9];
+                    i += 10;
+                    if (type == 1 && cls == 1 && len == 4) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
                     i += len;
                 }
+                return "";
             }
-            catch { }
-            return "";
+            catch (IndexOutOfRangeException) { return null; }
+            catch (FormatException) { return null; }
+        }
+
+        // Имя в DNS — метки, которые кончаются нулём или ссылкой (два байта 11xxxxxx) на имя выше в пакете.
+        // Ссылка может стоять и после нескольких меток (например, «www» + ссылка на «example.com»).
+        static int SkipName(byte[] r, int i)
+        {
+            while (true)
+            {
+                int b = r[i];
+                if (b == 0) return i + 1;
+                if ((b & 0xC0) == 0xC0) return i + 2;
+                if ((b & 0xC0) != 0) throw new FormatException("неизвестный тип метки");
+                i += b + 1;
+            }
         }
 
         public static string Site(string host, string ip)
@@ -211,7 +263,7 @@ namespace HbAi.XboxDns
         Rectangle rToggle, rClose, rMin, rSite, rGroup, rBrand, rVk, rCheck, rBest;
         readonly Rectangle[] rSeg = new Rectangle[Dns.Count];
         string[] check; int checkSet = -1; bool checking; string bestNote;
-        Point dragFrom;
+        Point dragFrom; bool dragging;
         // Разметка в «логических» пикселях окна 440×852 (как при 100 %), на экран всё умножается на S = DPI / 96.
         const int LW = 440, LH = 852;
         float S = 1f;
@@ -244,6 +296,7 @@ namespace HbAi.XboxDns
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
+            MouseUp += (s, e) => dragging = false;
         }
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
@@ -560,6 +613,7 @@ namespace HbAi.XboxDns
             if (rCheck.Contains(lp)) { RunCheck(dnsSet); return; }
             if (rBest.Contains(lp)) { RunBest(); return; }
             dragFrom = e.Location;
+            dragging = true;
         }
 
         void OnMove(object s, MouseEventArgs e)
@@ -569,8 +623,10 @@ namespace HbAi.XboxDns
             double dx = lp.X - c.X, dy = lp.Y - c.Y;
             bool hand = rClose.Contains(lp) || rMin.Contains(lp) || rGroup.Contains(lp) || rSite.Contains(lp) || rBrand.Contains(lp) || rVk.Contains(lp) || rSeg.Any(r => r.Contains(lp)) || rCheck.Contains(lp) || rBest.Contains(lp)
                         || dx * dx + dy * dy <= rToggle.Width * rToggle.Width / 4.0;
-            Cursor = hand && !busy ? Cursors.Hand : Cursors.Default;
-            if (e.Button == MouseButtons.Left && !hand)
+            Cursor = hand && !busy && !dragging ? Cursors.Hand : Cursors.Default;
+            // Тянем окно, только если кнопку мыши нажали на пустом месте. Раньше проверялось лишь «сейчас не над кнопкой»:
+            // нажал на кнопку, повёл мышь — окно прыгало на старое смещение, а над кнопками перетаскивание замирало.
+            if (dragging && e.Button == MouseButtons.Left)
                 Location = new Point(Location.X + e.X - dragFrom.X, Location.Y + e.Y - dragFrom.Y);
         }
 
@@ -598,7 +654,7 @@ namespace HbAi.XboxDns
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 var res = Probe.Service(set);
-                BeginInvoke((Action)(() => { checking = false; check = res; checkSet = set; Invalidate(); }));
+                Ui(() => { checking = false; check = res; checkSet = set; Invalidate(); });
             });
         }
 
@@ -607,48 +663,82 @@ namespace HbAi.XboxDns
         {
             if (checking) return;
             checking = true; checkSet = -2; check = null; bestNote = null; Invalidate();
+            int current = dnsSet;
             ThreadPool.QueueUserWorkItem(_ =>
             {
-                int n = Dns.Count - 1; // Xbox DNS не считаем
-                var all = new string[n][];
-                var th = new Thread[n];
-                for (int k = 0; k < n; k++) { int s = k; th[s] = new Thread(() => all[s] = Probe.Service(s)); th[s].IsBackground = true; th[s].Start(); }
+                var sets = Enumerable.Range(0, Dns.Count).Where(k => k != Dns.XboxSet).ToArray(); // Xbox DNS нейросети не открывает
+                var all = new string[Dns.Count][];
+                var th = sets.Select(k => new Thread(() => all[k] = Probe.Service(k)) { IsBackground = true }).ToArray();
+                foreach (var x in th) x.Start();
                 foreach (var x in th) x.Join();
-                int best = 0;
-                for (int k = 1; k < n; k++) if (Probe.Good(all[k]) > Probe.Good(all[best])) best = k;
+                // при равенстве оставляем текущий сервис, чтобы не переключать DNS впустую
+                int best = sets.Contains(current) ? current : sets[0];
+                foreach (int k in sets) if (Probe.Good(all[k]) > Probe.Good(all[best])) best = k;
                 int good = Probe.Good(all[best]);
-                BeginInvoke((Action)(() =>
+                Ui(() =>
                 {
                     checking = false; check = all[best]; checkSet = best;
-                    bestNote = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
-                    if (best != dnsSet) { dnsSet = best; if (active) Apply(true); }
+                    string note = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
+                    // если не открывает ни один — DNS не трогаем; пока идёт включение/выключение — тоже
+                    if (good > 0 && !busy && best != dnsSet)
+                    {
+                        dnsSet = best;
+                        if (active) { Apply(true, note); return; }
+                    }
+                    bestNote = note;
                     Invalidate();
-                }));
+                });
             });
         }
 
-        void Apply(bool turnOn)
+        // note — подпись, которую показать вместо обычной (её ставит «Найти лучший», он же уже всё проверил)
+        void Apply(bool turnOn, string note = null)
         {
-            busy = true; error = null; bestNote = null; Invalidate();
+            busy = true; error = null; bestNote = note; Invalidate();
             int set = dnsSet;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 string err;
                 try { err = turnOn ? Dns.Enable(set) : Dns.Disable(); }
                 catch (Exception ex) { err = ex.Message; }
-                Thread.Sleep(600);
-                int now = Dns.ActiveSet();
-                BeginInvoke((Action)(() =>
+                // Windows обновляет список DNS у адаптера не мгновенно — ждём до трёх секунд
+                int now = -1;
+                for (int i = 0; i < 5; i++)
+                {
+                    Thread.Sleep(600);
+                    now = Dns.ActiveSet();
+                    if (turnOn ? now == set : now < 0) break;
+                }
+                bool done = turnOn ? now == set : now < 0;
+                Ui(() =>
                 {
                     busy = false;
                     active = now >= 0;
-                    if (now >= 0) dnsSet = now;
-                    if (err != null && active != turnOn)
-                        error = "Не получилось: запустите от имени администратора";
+                    if (active) dnsSet = now;
+                    // Раньше ошибку показывали, только если не совпало «включён/выключен». При смене сервиса
+                    // на включённом DNS сбой проходил молча: оставался старый сервис, а подпись не менялась.
+                    if (!done)
+                        error = !Dns.IsAdmin() ? "Не получилось: запустите от имени администратора"
+                              : err != null ? "Не получилось поменять DNS: " + FirstLine(err)
+                              : "Не получилось поменять DNS, попробуйте ещё раз";
                     Invalidate();
-                    if (active && error == null && turnOn) RunCheck(dnsSet);
-                }));
+                    if (done && turnOn && note == null) RunCheck(set);
+                });
             });
+        }
+
+        static string FirstLine(string s)
+        {
+            s = s.Split('\n')[0].Trim();
+            return s.Length > 70 ? s.Substring(0, 70) + "…" : s;
+        }
+
+        // Фоновые потоки возвращают результат в окно. Если окно уже закрыли, BeginInvoke бросает исключение
+        // в потоке пула, и программа падает с отчётом об ошибке — поэтому проверяем и глушим именно этот случай.
+        void Ui(Action a)
+        {
+            try { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
+            catch (InvalidOperationException) { }
         }
     }
 
