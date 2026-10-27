@@ -215,6 +215,15 @@ namespace HbAi.XboxDns
         }
 
         public static int Good(string[] res) { return res == null ? -1 : res.Count(x => x == Ok); }
+
+        // сервис, где открылось больше всего сайтов; при равенстве — тот, что раньше в списке.
+        // Непроверенный сервис (null), например Xbox DNS, выбран не будет.
+        public static int Best(string[][] all)
+        {
+            int best = 0;
+            for (int k = 1; k < all.Length; k++) if (Good(all[k]) > Good(all[best])) best = k;
+            return best;
+        }
     }
 
     class MainForm : Form
@@ -644,13 +653,12 @@ namespace HbAi.XboxDns
             checking = true; checkSet = -2; check = null; bestNote = null; Invalidate();
             ThreadPool.QueueUserWorkItem(_ =>
             {
-                int n = Dns.Count - 1; // Xbox DNS не считаем
-                var all = new string[n][];
-                var th = new Thread[n];
-                for (int k = 0; k < n; k++) { int s = k; th[s] = new Thread(() => all[s] = Probe.Service(s)); th[s].IsBackground = true; th[s].Start(); }
+                var all = new string[Dns.Count][];
+                var th = Enumerable.Range(0, Dns.Count).Where(k => k != Dns.XboxSet)
+                    .Select(k => new Thread(() => all[k] = Probe.Service(k)) { IsBackground = true }).ToArray();
+                foreach (var x in th) x.Start();
                 foreach (var x in th) x.Join();
-                int best = 0;
-                for (int k = 1; k < n; k++) if (Probe.Good(all[k]) > Probe.Good(all[best])) best = k;
+                int best = Probe.Best(all);
                 int good = Probe.Good(all[best]);
                 BeginInvoke((Action)(() =>
                 {

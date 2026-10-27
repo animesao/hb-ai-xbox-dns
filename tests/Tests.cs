@@ -28,6 +28,7 @@ namespace HbAi.XboxDns
         static int Main()
         {
             DnsReplies();
+            BestService();
             WindowDrag();
             PowerShellRun();
 
@@ -118,6 +119,30 @@ namespace HbAi.XboxDns
 
             T("DNS: сервер молчит", () =>
                 Eq(Probe.NoDns, Probe.Verdict(Ask("grok.com", q => null))));
+        }
+
+        // ---------- «Найти лучший» ----------
+
+        static string[] Res(int ok)
+        {
+            return Enumerable.Range(0, Probe.Host.Length).Select(i => i < ok ? Probe.Ok : Probe.NoLink).ToArray();
+        }
+
+        static void BestService()
+        {
+            T("Лучший — где открылось больше сайтов", () =>
+                Eq(2, Probe.Best(new[] { Res(5), Res(4), Res(6), Res(6), null })));
+
+            T("При равенстве выбирается первый по списку", () =>
+                Eq(1, Probe.Best(new[] { Res(3), Res(5), Res(5), Res(2), null })));
+
+            T("Xbox DNS (не проверялся) лучшим не становится", () =>
+                Eq(0, Probe.Best(new[] { Res(0), Res(0), Res(0), Res(0), null })));
+
+            T("Капча Google не считается открывшимся сайтом", () =>
+                Eq(1, Probe.Best(new[] {
+                    new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok },
+                    Res(5), null, null, null })));
         }
 
         // ---------- окно: перетаскивание ----------
