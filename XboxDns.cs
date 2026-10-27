@@ -10,6 +10,8 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -114,13 +116,27 @@ namespace HbAi.XboxDns
             psi.RedirectStandardOutput = true;
             using (var p = Process.Start(psi))
             {
-                // оба потока читаем одновременно: иначе PowerShell встаёт, заполнив один, пока ждём конца другого
+                // Оба потока читаем одновременно: если читать по очереди, а PowerShell забьёт буфер второго потока,
+                // процессы ждут друг друга бесконечно. И не ждём вечно, если PowerShell завис.
+                var err = p.StandardError.ReadToEndAsync();
                 var output = p.StandardOutput.ReadToEndAsync();
-                string err = p.StandardError.ReadToEnd();
-                output.Wait();
+                if (!p.WaitForExit(60000))
+                {
+                    try { p.Kill(); } catch { }
+                    return "PowerShell не ответил за минуту";
+                }
                 p.WaitForExit();
-                return p.ExitCode == 0 && err.Trim().Length == 0 ? null : err.Trim();
+                output.Wait();
+                string e = err.Result.Trim();
+                if (p.ExitCode == 0 && e.Length == 0) return null;
+                return e.Length > 0 ? e : "PowerShell завершился с кодом " + p.ExitCode;
             }
+        }
+
+        public static bool IsAdmin()
+        {
+            using (var id = WindowsIdentity.GetCurrent())
+                return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
         }
     }
 
@@ -134,54 +150,72 @@ namespace HbAi.XboxDns
 
         public static string Resolve(string server, string host)
         {
-            var q = new System.IO.MemoryStream();
-            var w = new System.IO.BinaryWriter(q);
-            w.Write(new byte[] { 0x2a, 0x2a, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
-            foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(System.Text.Encoding.ASCII.GetBytes(part)); }
+            var q = new MemoryStream();
+            var w = new BinaryWriter(q);
+            w.Write(new byte[] { QueryId >> 8, QueryId & 0xFF, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0 });
+            foreach (var part in host.Split('.')) { w.Write((byte)part.Length); w.Write(Encoding.ASCII.GetBytes(part)); }
             w.Write(new byte[] { 0, 0, 1, 0, 1 });
-            byte[] r;
-            try
+            // UDP-пакет иногда теряется (проверка 27.10.2026: GeoHide раз в несколько запросов не отвечал),
+            // поэтому спрашиваем до двух раз, прежде чем писать «DNS молчит».
+            var data = q.ToArray();
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                using (var u = new System.Net.Sockets.UdpClient())
+                try
                 {
-                    u.Client.ReceiveTimeout = 3000;
-                    var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(server), 53);
-                    var data = q.ToArray(); u.Send(data, data.Length, ep);
-                    r = u.Receive(ref ep);
+                    using (var u = new System.Net.Sockets.UdpClient())
+                    {
+                        u.Client.ReceiveTimeout = 2500;
+                        var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Parse(server), 53);
+                        u.Send(data, data.Length, ep);
+                        string ip = ParseA(u.Receive(ref ep));
+                        if (ip != null) return ip;
+                    }
                 }
+                catch (System.Net.Sockets.SocketException) { }
             }
-            catch { return null; }
-            return FirstA(r);
+            return null;
         }
 
-        // первый адрес IPv4 из ответа DNS; "" — адреса нет или ответ битый
-        static string FirstA(byte[] r)
+        const int QueryId = 0x2a2a;
+
+        // Первый адрес IPv4 из ответа DNS. "" — сервер ответил, но адреса нет (NXDOMAIN или пустой ответ);
+        // null — ответ не наш, битый или сервер отказал (тогда пробуем второй адрес сервиса).
+        internal static string ParseA(byte[] r)
         {
             try
             {
+                if (r.Length < 12 || (r[0] << 8 | r[1]) != QueryId || (r[2] & 0x80) == 0) return null;
+                int rcode = r[3] & 0x0F;
+                if (rcode == 3) return "";
+                if (rcode != 0) return null;
                 int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], i = 12;
                 for (int n = 0; n < qd; n++) i = SkipName(r, i) + 4;
                 for (int n = 0; n < an; n++)
                 {
                     i = SkipName(r, i);
-                    int type = r[i] << 8 | r[i + 1]; int len = r[i + 8] << 8 | r[i + 9]; i += 10;
-                    if (type == 1) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
+                    int type = r[i] << 8 | r[i + 1], cls = r[i + 2] << 8 | r[i + 3], len = r[i + 8] << 8 | r[i + 9];
+                    i += 10;
+                    if (type == 1 && cls == 1 && len == 4) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
                     i += len;
                 }
+                return "";
             }
-            catch (IndexOutOfRangeException) { }
-            return "";
+            catch (IndexOutOfRangeException) { return null; }
+            catch (FormatException) { return null; }
         }
 
-        // имя в пакете: метки, а в конце ноль или указатель на имя раньше в пакете (RFC 1035, 4.1.4)
+        // Имя в DNS — метки, которые кончаются нулём или ссылкой (два байта 11xxxxxx) на имя выше в пакете.
+        // Ссылка может стоять и после нескольких меток (например, «www» + ссылка на «example.com»).
         static int SkipName(byte[] r, int i)
         {
-            while (r[i] != 0)
+            while (true)
             {
-                if ((r[i] & 0xC0) == 0xC0) return i + 2;
-                i += r[i] + 1;
+                int b = r[i];
+                if (b == 0) return i + 1;
+                if ((b & 0xC0) == 0xC0) return i + 2;
+                if ((b & 0xC0) != 0) throw new FormatException("неизвестный тип метки");
+                i += b + 1;
             }
-            return i + 1;
         }
 
         public static string Site(string host, string ip)
@@ -197,14 +231,14 @@ namespace HbAi.XboxDns
                     using (var ssl = new System.Net.Security.SslStream(tcp.GetStream(), false, (s, c, ch, e) => true))
                     {
                         ssl.AuthenticateAsClient(host, null, (System.Security.Authentication.SslProtocols)(3072 | 12288), false);
-                        var req = System.Text.Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
+                        var req = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
                             "\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36" +
                             "\r\nAccept: text/html\r\nConnection: close\r\n\r\n");
                         ssl.Write(req, 0, req.Length); ssl.Flush();
                         var buf = new byte[16384]; int got = 0, n;
                         while (got < buf.Length && (n = ssl.Read(buf, got, buf.Length - got)) > 0)
-                        { got += n; if (System.Text.Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
-                        return Classify(System.Text.Encoding.ASCII.GetString(buf, 0, got));
+                        { got += n; if (Encoding.ASCII.GetString(buf, 0, got).Contains("\r\n\r\n")) break; }
+                        return Classify(Encoding.ASCII.GetString(buf, 0, got));
                     }
                 }
             }
@@ -250,18 +284,20 @@ namespace HbAi.XboxDns
 
         public static int Good(string[] res) { return res == null ? -1 : res.Count(x => x == Ok); }
 
-        // сервис, где открылось больше всего сайтов; при равенстве — тот, что раньше в списке.
+        // сервис, где открылось больше всего сайтов; при равенстве остаётся текущий, чтобы не переключать DNS
+        // впустую, а без текущего среди проверенных — тот, что раньше в списке.
         // Непроверенный сервис (null), например Xbox DNS, выбран не будет.
-        public static int Best(string[][] all)
+        public static int Best(string[][] all, int current)
         {
-            int best = 0;
-            for (int k = 1; k < all.Length; k++) if (Good(all[k]) > Good(all[best])) best = k;
+            int best = current >= 0 && current < all.Length && all[current] != null ? current : 0;
+            for (int k = 0; k < all.Length; k++) if (Good(all[k]) > Good(all[best])) best = k;
             return best;
         }
     }
 
     class MainForm : Form
     {
+        const string Version = "1.21";   // та же версия в app.manifest (1.2.1.0) и в первой строке файла
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
         static readonly Color Violet = Color.FromArgb(140, 112, 255);
         static readonly Color Yellow = Color.FromArgb(255, 224, 102);
@@ -324,6 +360,12 @@ namespace HbAi.XboxDns
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { anim.Dispose(); fonts.Dispose(); }
+            base.Dispose(disposing);
+        }
+
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
 
         float WindowDpi()
@@ -338,7 +380,9 @@ namespace HbAi.XboxDns
         {
             S = ForceScale > 0 ? ForceScale : Math.Min(scale, Math.Min((wa.Height - 24f) / LH, (wa.Width - 24f) / LW));
             ClientSize = new Size((int)Math.Round(LW * S), (int)Math.Round(LH * S));
+            var old = Region;
             Region = RoundRegion(ClientRectangle, (int)Math.Round(22 * S));
+            if (old != null) old.Dispose();
             if (IsHandleCreated && Visible)
                 Location = new Point(Math.Max(wa.Left, Math.Min(Left, wa.Right - Width)), Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height)));
             Invalidate();
@@ -376,7 +420,8 @@ namespace HbAi.XboxDns
                 {
                     if (s == null) continue;
                     var data = new byte[s.Length];
-                    s.Read(data, 0, data.Length);
+                    for (int got = 0, n; got < data.Length; got += n)   // Read может отдать меньше, чем просили
+                        if ((n = s.Read(data, got, data.Length - got)) == 0) throw new EndOfStreamException(name);
                     IntPtr ptr = Marshal.AllocCoTaskMem(data.Length);
                     Marshal.Copy(data, 0, ptr, data.Length);
                     fonts.AddMemoryFont(ptr, data.Length);
@@ -393,7 +438,7 @@ namespace HbAi.XboxDns
             return new FontFamily(fallback);
         }
 
-        static Region RoundRegion(Rectangle r, int rad) { return new Region(RoundPath(r, rad)); }
+        static Region RoundRegion(Rectangle r, int rad) { using (var p = RoundPath(r, rad)) return new Region(p); }
 
         static GraphicsPath RoundPath(RectangleF r, float rad)
         {
@@ -442,7 +487,7 @@ namespace HbAi.XboxDns
         {
             using (var f = Pt(fBold, 11f))
             {
-                string pill = "Smart DNS 1.21 · " + Dns.Site[dnsSet];
+                string pill = "Smart DNS " + Version + " · " + Dns.Site[dnsSet];
                 var sz = g.MeasureString(pill, f);
                 var pr = new RectangleF(30, 24, sz.Width + 46, 34);
                 rSite = Rectangle.Round(pr);
@@ -628,9 +673,9 @@ namespace HbAi.XboxDns
 
         void Centered(Graphics g, string s, Font f, Brush b, float y, float maxW = 0)
         {
-            var sf = new StringFormat { Alignment = StringAlignment.Center };
             float w = maxW > 0 ? maxW : LW;
-            g.DrawString(s, f, b, new RectangleF((LW - w) / 2, y, w, 40), sf);
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center })
+                g.DrawString(s, f, b, new RectangleF((LW - w) / 2, y, w, 40), sf);
         }
 
         void OnDown(object s, MouseEventArgs e)
@@ -654,7 +699,7 @@ namespace HbAi.XboxDns
 
         void OnMove(object s, MouseEventArgs e)
         {
-            Cursor = OverControl(ToLogical(e.Location)) && !busy ? Cursors.Hand : Cursors.Default;
+            Cursor = OverControl(ToLogical(e.Location)) && !busy && !dragging ? Cursors.Hand : Cursors.Default;
             if (dragging && e.Button == MouseButtons.Left)
                 Location = new Point(Location.X + e.X - dragFrom.X, Location.Y + e.Y - dragFrom.Y);
         }
@@ -696,7 +741,7 @@ namespace HbAi.XboxDns
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 var res = Probe.Service(set);
-                BeginInvoke((Action)(() => { checking = false; check = res; checkSet = set; Invalidate(); }));
+                Ui(() => { checking = false; check = res; checkSet = set; Invalidate(); });
             });
         }
 
@@ -705,6 +750,7 @@ namespace HbAi.XboxDns
         {
             if (checking) return;
             checking = true; checkSet = -2; check = null; bestNote = null; Invalidate();
+            int current = dnsSet;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 var all = new string[Dns.Count][];
@@ -712,40 +758,72 @@ namespace HbAi.XboxDns
                     .Select(k => new Thread(() => all[k] = Probe.Service(k)) { IsBackground = true }).ToArray();
                 foreach (var x in th) x.Start();
                 foreach (var x in th) x.Join();
-                int best = Probe.Best(all);
+                int best = Probe.Best(all, current);
                 int good = Probe.Good(all[best]);
-                BeginInvoke((Action)(() =>
+                Ui(() =>
                 {
                     checking = false; check = all[best]; checkSet = best;
-                    bestNote = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
-                    if (best != dnsSet) { dnsSet = best; if (active) Apply(true); }
+                    string note = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
+                    // если не открывает ни один — DNS не трогаем; пока идёт включение/выключение — тоже
+                    if (good > 0 && !busy && best != dnsSet)
+                    {
+                        dnsSet = best;
+                        if (active) { Apply(true, note); return; }
+                    }
+                    bestNote = note;
                     Invalidate();
-                }));
+                });
             });
         }
 
-        void Apply(bool turnOn)
+        // note — подпись, которую показать вместо обычной (её ставит «Найти лучший», он же уже всё проверил)
+        void Apply(bool turnOn, string note = null)
         {
-            busy = true; error = null; bestNote = null; Invalidate();
+            busy = true; error = null; bestNote = note; Invalidate();
             int set = dnsSet;
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 string err;
                 try { err = turnOn ? Dns.Enable(set) : Dns.Disable(); }
                 catch (Exception ex) { err = ex.Message; }
-                Thread.Sleep(600);
-                int now = Dns.ActiveSet();
-                BeginInvoke((Action)(() =>
+                // Windows обновляет список DNS у адаптера не мгновенно — ждём до трёх секунд
+                int now = -1;
+                for (int i = 0; i < 5; i++)
+                {
+                    Thread.Sleep(600);
+                    now = Dns.ActiveSet();
+                    if (turnOn ? now == set : now < 0) break;
+                }
+                bool done = turnOn ? now == set : now < 0;
+                Ui(() =>
                 {
                     busy = false;
                     active = now >= 0;
-                    if (now >= 0) dnsSet = now;
-                    if (err != null && active != turnOn)
-                        error = "Не получилось: запустите от имени администратора";
+                    if (active) dnsSet = now;
+                    // Раньше ошибку показывали, только если не совпало «включён/выключен». При смене сервиса
+                    // на включённом DNS сбой проходил молча: оставался старый сервис, а подпись не менялась.
+                    if (!done)
+                        error = !Dns.IsAdmin() ? "Не получилось: запустите от имени администратора"
+                              : err != null ? "Не получилось поменять DNS: " + FirstLine(err)
+                              : "Не получилось поменять DNS, попробуйте ещё раз";
                     Invalidate();
-                    if (active && error == null && turnOn) RunCheck(dnsSet);
-                }));
+                    if (done && turnOn && note == null) RunCheck(set);
+                });
             });
+        }
+
+        static string FirstLine(string s)
+        {
+            s = s.Split('\n')[0].Trim();
+            return s.Length > 70 ? s.Substring(0, 70) + "…" : s;
+        }
+
+        // Фоновые потоки возвращают результат в окно. Если окно уже закрыли, BeginInvoke бросает исключение
+        // в потоке пула, и программа падает с отчётом об ошибке — поэтому проверяем и глушим именно этот случай.
+        void Ui(Action a)
+        {
+            try { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
+            catch (InvalidOperationException) { }
         }
     }
 

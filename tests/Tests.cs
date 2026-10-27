@@ -134,21 +134,30 @@ namespace HbAi.XboxDns
         static void BestService()
         {
             T("Лучший — где открылось больше сайтов", () =>
-                Eq(2, Probe.Best(new[] { Res(5), Res(4), Res(6), Res(6), null })));
+                Eq(2, Probe.Best(new[] { Res(5), Res(4), Res(6), Res(6), null }, -1)));
 
             T("При равенстве выбирается первый по списку", () =>
-                Eq(1, Probe.Best(new[] { Res(3), Res(5), Res(5), Res(2), null })));
+                Eq(1, Probe.Best(new[] { Res(3), Res(5), Res(5), Res(2), null }, -1)));
 
             T("Xbox DNS (не проверялся) лучшим не становится", () =>
-                Eq(0, Probe.Best(new[] { Res(0), Res(0), Res(0), Res(0), null })));
+                Eq(0, Probe.Best(new[] { Res(0), Res(0), Res(0), Res(0), null }, -1)));
 
             T("Капча Google не считается открывшимся сайтом", () =>
                 Eq(1, Probe.Best(new[] {
                     new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok },
-                    Res(5), null, null, null })));
+                    Res(5), null, null, null }, -1)));
+
+            T("При равенстве остаётся текущий сервис", () =>
+                Eq(2, Probe.Best(new[] { Res(5), Res(3), Res(5), Res(1), null }, 2)));
+
+            T("Если ни один не открывает, остаётся текущий", () =>
+                Eq(3, Probe.Best(new[] { Res(0), Res(0), Res(0), Res(0), null }, 3)));
+
+            T("Текущий Xbox (не проверялся) не мешает выбрать лучший", () =>
+                Eq(1, Probe.Best(new[] { Res(2), Res(4), Res(3), Res(0), null }, 4)));
 
             T("Непроверенный сервис не выбирается, даже если стоит первым", () =>
-                Eq(1, Probe.Best(new[] { null, Res(0), Res(0) })));
+                Eq(1, Probe.Best(new[] { null, Res(0), Res(0) }, -1)));
         }
 
         // ---------- какой сервис стоит в Windows ----------
