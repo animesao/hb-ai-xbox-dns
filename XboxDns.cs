@@ -300,7 +300,6 @@ namespace HbAi.XboxDns
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
             MouseMove += OnMove;
-            MouseUp += (s, e) => dragging = false;
         }
 
         Rectangle rToggleGlow() { var r = rToggle; r.Inflate(40, 40); return r; }

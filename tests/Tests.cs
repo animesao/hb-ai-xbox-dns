@@ -145,6 +145,9 @@ namespace HbAi.XboxDns
                 Eq(1, Probe.Best(new[] {
                     new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok },
                     Res(5), null, null, null })));
+
+            T("Непроверенный сервис не выбирается, даже если стоит первым", () =>
+                Eq(1, Probe.Best(new[] { null, Res(0), Res(0) })));
         }
 
         // ---------- какой сервис стоит в Windows ----------
@@ -174,6 +177,10 @@ namespace HbAi.XboxDns
                 Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 307\r\nLOCATION: /geo-restricted\r\n\r\n")));
             T("Редирект на страницу …-unavailable-in-region", () =>
                 Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /app-unavailable-in-region\r\n\r\n")));
+            T("Редирект на страницу …/not-available", () =>
+                Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /service-not-available\r\n\r\n")));
+            T("Адрес страницы блока заглавными буквами", () =>
+                Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /Unsupported-Country\r\n\r\n")));
         }
 
         // ---------- окно: перетаскивание ----------
@@ -192,6 +199,22 @@ namespace HbAi.XboxDns
                     Mouse(f, "OnMouseDown", new Point(seg.X + seg.Width / 2, seg.Y + seg.Height / 2));
                     Mouse(f, "OnMouseMove", new Point(220, 470));   // свободное место под статусом
                     Eq(new Point(300, 200), f.Location, "окно:");
+                }
+            });
+
+            T("Каждое нажатие решает заново: после перетаскивания нажали на сервис — окно стоит", () =>
+            {
+                MainForm.ForceScale = 1f;
+                using (var f = new MainForm())
+                {
+                    f.Location = new Point(300, 200);
+                    int set = (int)typeof(MainForm).GetField("dnsSet", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(f);
+                    var seg = ((Rectangle[])typeof(MainForm).GetField("rSeg", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(f))[set];
+                    Mouse(f, "OnMouseDown", new Point(220, 470));   // тянули с пустого места, отпускание не дошло
+                    Mouse(f, "OnMouseDown", new Point(seg.X + seg.Width / 2, seg.Y + seg.Height / 2));
+                    var before = f.Location;
+                    Mouse(f, "OnMouseMove", new Point(250, 480));
+                    Eq(before, f.Location, "окно:");
                 }
             });
 
@@ -226,6 +249,16 @@ namespace HbAi.XboxDns
                 th.IsBackground = true; th.Start();
                 if (!th.Join(30000)) throw new Exception("за 30 секунд PowerShell не завершился");
                 Eq(null, err, "ошибка:");
+            });
+
+            T("PowerShell с большим текстом ошибки не вешает программу и ошибка доходит", () =>
+            {
+                var run = typeof(Dns).GetMethod("Run", BindingFlags.NonPublic | BindingFlags.Static);
+                string err = null;
+                var th = new Thread(() => err = (string)run.Invoke(null, new object[] { "[Console]::Error.Write('e' * 200000)" }));
+                th.IsBackground = true; th.Start();
+                if (!th.Join(30000)) throw new Exception("за 30 секунд PowerShell не завершился");
+                Eq(200000, err == null ? 0 : err.Length, "длина ошибки:");
             });
         }
     }
