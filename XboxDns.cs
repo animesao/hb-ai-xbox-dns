@@ -319,25 +319,34 @@ namespace HbAi.XboxDns
         {
             try
             {
-                if (r.Length < 12 || (r[0] << 8 | r[1]) != QueryId || (r[2] & 0x80) == 0) return null;
+                if (!OurAnswer(r)) return null;
                 int rcode = r[3] & 0x0F;
-                if (rcode == 3) return "";
-                if (rcode != 0) return null;
-                int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], i = 12;
-                for (int n = 0; n < qd; n++) i = SkipName(r, i) + 4;
-                for (int n = 0; n < an; n++)
-                {
-                    i = SkipName(r, i);
-                    int type = r[i] << 8 | r[i + 1], cls = r[i + 2] << 8 | r[i + 3], len = r[i + 8] << 8 | r[i + 9];
-                    i += 10;
-                    if (type == 1 && cls == 1 && len == 4) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
-                    i += len;
-                    if (i > r.Length) return null;   // запись длиннее пакета — ответ обрезан
-                }
-                return "";
+                if (rcode == 3) return "";        // такого имени нет
+                if (rcode != 0) return null;      // сервер отказал
+                int i = 12;
+                for (int n = 0; n < (r[4] << 8 | r[5]); n++) i = SkipName(r, i) + 4;
+                return FirstA(r, i, r[6] << 8 | r[7]);
             }
             catch (IndexOutOfRangeException) { return null; }
             catch (FormatException) { return null; }
+        }
+
+        // ответ на наш запрос: длина заголовка, номер запроса, флаг «это ответ»
+        static bool OurAnswer(byte[] r) { return r.Length >= 12 && (r[0] << 8 | r[1]) == QueryId && (r[2] & 0x80) != 0; }
+
+        // первый адрес IPv4 среди записей ответа, начиная с i; null — запись длиннее пакета (ответ обрезан)
+        static string FirstA(byte[] r, int i, int answers)
+        {
+            for (int n = 0; n < answers; n++)
+            {
+                i = SkipName(r, i);
+                int type = r[i] << 8 | r[i + 1], cls = r[i + 2] << 8 | r[i + 3], len = r[i + 8] << 8 | r[i + 9];
+                i += 10;
+                if (type == 1 && cls == 1 && len == 4) return r[i] + "." + r[i + 1] + "." + r[i + 2] + "." + r[i + 3];
+                i += len;
+                if (i > r.Length) return null;
+            }
+            return "";
         }
 
         // Имя в DNS — метки, которые кончаются нулём или ссылкой (два байта 11xxxxxx) на имя выше в пакете.
@@ -935,33 +944,40 @@ namespace HbAi.XboxDns
                 string err;
                 try { err = turnOn ? Dns.Enable(set) : Dns.Disable(); }
                 catch (Exception ex) { err = ex.Message; }
-                // Windows обновляет список DNS у адаптера не мгновенно — ждём до трёх секунд
-                int now = -1;
-                for (int i = 0; i < 5; i++)
-                {
-                    Thread.Sleep(600);
-                    now = Dns.ActiveSet();
-                    if (turnOn ? now == set : now < 0) break;
-                }
-                bool done = turnOn ? now == set : now < 0;
+                int now = WaitFor(turnOn, set);
+                bool done = Reached(turnOn, set, now);
+                string msg = Outcome(turnOn, done, err, Dns.IsAdmin());
                 Ui(() =>
                 {
                     busy = false;
                     active = now >= 0;
                     stale = !active && Dns.StaleActive();
                     if (active) dnsSet = now;
-                    // Раньше ошибку показывали, только если не совпало «включён/выключен». При смене сервиса
-                    // на включённом DNS сбой проходил молча: оставался старый сервис, а подпись не менялась.
-                    if (done && err != null)
-                        error = "DNS включён, но: " + FirstLine(err);
-                    else if (!done)
-                        error = !Dns.IsAdmin() ? "Не получилось: запустите от имени администратора"
-                              : err != null ? "Не получилось поменять DNS: " + FirstLine(err)
-                              : "Не получилось поменять DNS, попробуйте ещё раз";
+                    error = msg;
                     Invalidate();
                     if (done && turnOn && note == null) RunCheck(set);
                 });
             });
+        }
+
+        // Windows обновляет список DNS у подключения не мгновенно — ждём до трёх секунд
+        static int WaitFor(bool turnOn, int set)
+        {
+            int now = -1;
+            for (int i = 0; i < 5 && !Reached(turnOn, set, now); i++) { Thread.Sleep(600); now = Dns.ActiveSet(); }
+            return now;
+        }
+
+        // встал ли нужный сервис (или, при выключении, никакой)
+        internal static bool Reached(bool turnOn, int set, int now) { return turnOn ? now == set : now < 0; }
+
+        // что написать после включения или выключения; null — всё хорошо.
+        // Сбой при смене сервиса на включённом DNS тоже виден: «встал» сверяется с нужным сервисом, а не с «включён/выключен».
+        internal static string Outcome(bool turnOn, bool done, string err, bool admin)
+        {
+            if (done) return err == null ? null : (turnOn ? "DNS включён, но: " : "DNS выключен, но: ") + FirstLine(err);
+            if (!admin) return "Не получилось: запустите от имени администратора";
+            return err != null ? "Не получилось поменять DNS: " + FirstLine(err) : "Не получилось поменять DNS, попробуйте ещё раз";
         }
 
         static string FirstLine(string s)

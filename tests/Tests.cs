@@ -34,6 +34,7 @@ namespace HbAi.XboxDns
             NewVersion();
             WindowDrag();
             Switching();
+            AfterSwitch();
 
             int failed = 0;
             foreach (var t in all)
@@ -71,7 +72,8 @@ namespace HbAi.XboxDns
         static readonly byte[] ToQuestion = { 0xC0, 12 };   // указатель на имя из вопроса
 
         // ответ = запрос с флагом «ответ» и числом записей + сами записи
-        static string Ask(string host, Func<byte[], byte[][]> answers)
+        // header — поправить заголовок ответа (номер запроса, код ответа); silentFirst — первый запрос «потерять»
+        static string Ask(string host, Func<byte[], byte[][]> answers, Action<List<byte>> header = null, bool silentFirst = false)
         {
             var srv = new UdpClient(new IPEndPoint(IPAddress.Loopback, 53));
             var th = new Thread(() =>
@@ -80,10 +82,12 @@ namespace HbAi.XboxDns
                 {
                     var from = new IPEndPoint(IPAddress.Any, 0);
                     var q = srv.Receive(ref from);
+                    if (silentFirst) q = srv.Receive(ref from);
                     var rr = answers(q);
                     if (rr == null) return;
                     var r = new List<byte>(q);
                     r[2] = 0x81; r[3] = 0x80; r[6] = 0; r[7] = (byte)rr.Length;
+                    if (header != null) header(r);
                     foreach (var x in rr) r.AddRange(x);
                     srv.Send(r.ToArray(), r.Count, from);
                 }
@@ -127,6 +131,18 @@ namespace HbAi.XboxDns
                     rr[11] = 60;   // длина данных 60 байт, а в пакете их меньше
                     return new[] { rr };
                 }))));
+
+            T("DNS: ответ с чужим номером запроса не принимается", () =>
+                Eq(Probe.NoDns, Probe.Verdict(Ask("chatgpt.com", q => new[] { Rr(ToQuestion, 1, new byte[] { 1, 2, 3, 4 }) }, h => h[0] ^= 0xFF))));
+
+            T("DNS: «такого имени нет» (NXDOMAIN) — не пускает", () =>
+                Eq(Probe.Zero, Probe.Verdict(Ask("chatgpt.com", q => new byte[0][], h => h[3] = 0x83))));
+
+            T("DNS: сервер отказал (REFUSED) — как молчание", () =>
+                Eq(Probe.NoDns, Probe.Verdict(Ask("chatgpt.com", q => new byte[0][], h => h[3] = 0x85))));
+
+            T("DNS: первый запрос потерялся — второй находит адрес", () =>
+                Eq("1.2.3.4", Ask("chatgpt.com", q => new[] { Rr(ToQuestion, 1, new byte[] { 1, 2, 3, 4 }) }, null, true)));
 
             T("DNS: сервер молчит", () =>
                 Eq(Probe.NoDns, Probe.Verdict(Ask("grok.com", q => null))));
@@ -214,6 +230,7 @@ namespace HbAi.XboxDns
             T("Номер версии из переадресации GitHub", () =>
                 Eq("1.23", Updates.TagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/v1.23")));
             T("Переадресация не на релиз — номера нет", () => Eq(null, Updates.TagOf("https://github.com/login")));
+            T("Тег без «v» — не наш формат, номера нет", () => Eq(null, Updates.TagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/1.23")));
             T("Нет переадресации — номера нет", () => Eq(null, Updates.TagOf(null)));
             T("1.23 новее 1.22", () => Eq(true, Updates.IsNewer("1.23", "1.22")));
             T("1.3 новее 1.22 (номера как десятичные дроби)", () => Eq(true, Updates.IsNewer("1.3", "1.22")));
@@ -291,6 +308,27 @@ namespace HbAi.XboxDns
         {
             typeof(Control).GetMethod(handler, BindingFlags.NonPublic | BindingFlags.Instance)
                 .Invoke(f, new object[] { new MouseEventArgs(MouseButtons.Left, 1, p.X, p.Y, 0) });
+        }
+
+        // ---------- что пишет окно после включения или выключения ----------
+
+        static void AfterSwitch()
+        {
+            T("Включили нужный сервис — ошибки нет", () => Eq(null, MainForm.Outcome(true, MainForm.Reached(true, 2, 2), null, true)));
+            T("Хотели MagicDNS, а встал Comss — это сбой", () => Eq(false, MainForm.Reached(true, 2, 0)));
+            T("Выключили — сервиса нет, ошибки нет", () => Eq(null, MainForm.Outcome(false, MainForm.Reached(false, 2, -1), null, true)));
+            T("Включили, но IPv6 не выключился — «DNS включён, но: …»", () =>
+                Eq("DNS включён, но: IPv6 не выключился на «Wi-Fi»: нет доступа", MainForm.Outcome(true, true, "IPv6 не выключился на «Wi-Fi»: нет доступа", true)));
+            T("Выключили, но IPv6 не вернулся — «DNS выключен, но: …», а не «включён»", () =>
+                Eq("DNS выключен, но: IPv6 не включился на «Wi-Fi»: нет доступа", MainForm.Outcome(false, true, "IPv6 не включился на «Wi-Fi»: нет доступа", true)));
+            T("Без прав администратора — просьба запустить от администратора", () =>
+                Eq("Не получилось: запустите от имени администратора", MainForm.Outcome(true, false, "Access denied", false)));
+            T("С правами, но Windows отказала — причина первой строкой", () =>
+                Eq("Не получилось поменять DNS: Ошибка 5", MainForm.Outcome(true, false, "Ошибка 5\nвторая строка", true)));
+            T("С правами, ошибки нет, но сервис не встал — попробовать ещё раз", () =>
+                Eq("Не получилось поменять DNS, попробуйте ещё раз", MainForm.Outcome(true, false, null, true)));
+            T("Длинная причина обрезается до 70 знаков", () =>
+                Eq(true, MainForm.Outcome(true, false, new string('x', 200), true).EndsWith("…")));
         }
 
         // ---------- включение и выключение: подставная Windows записывает, что с ней сделали ----------
