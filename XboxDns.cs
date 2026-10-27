@@ -86,8 +86,10 @@ namespace HbAi.XboxDns
             psi.RedirectStandardOutput = true;
             using (var p = Process.Start(psi))
             {
+                // оба потока читаем одновременно: иначе PowerShell встаёт, заполнив один, пока ждём конца другого
+                var output = p.StandardOutput.ReadToEndAsync();
                 string err = p.StandardError.ReadToEnd();
-                p.StandardOutput.ReadToEnd();
+                output.Wait();
                 p.WaitForExit();
                 return p.ExitCode == 0 && err.Trim().Length == 0 ? null : err.Trim();
             }
