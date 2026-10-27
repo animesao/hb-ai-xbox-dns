@@ -73,15 +73,35 @@ namespace HbAi.XboxDns
             return -1;
         }
 
-        public static string Enable(int set)
+        public static string Enable(int set) { return Run(EnableScript(set)); }
+        public static string Disable() { return Run(DisableScript()); }
+
+        // IPv6. Если у провайдера есть IPv6, а у сервиса нет адресов IPv6, Windows продолжает спрашивать IPv6-DNS
+        // провайдера и ходит на сайты напрямую по IPv6 — мимо Smart DNS, и сайт пишет «недоступно в вашей стране».
+        // Поэтому на время Smart DNS IPv6 на таких адаптерах выключается. Список адаптеров, где его выключила
+        // программа, лежит в ProgramData и пишется до выключения: при выключении DNS, и даже после сбоя
+        // посередине, программа включает IPv6 только там, где выключала сама.
+        const string Off6List = "if (-not $m) { $m = Join-Path $env:ProgramData 'HB AI Smart DNS\\ipv6-off.txt' }; $off = @(if (Test-Path $m) { Get-Content $m }); ";
+        const string TurnOff6 =
+            "$g = @(Get-NetIPAddress -InterfaceIndex $x.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue | Where-Object { $_.PrefixOrigin -ne 'WellKnown' -and $_.IPAddress -notlike 'fe80*' }); " +
+            "$b = Get-NetAdapterBinding -Name $x.Name -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue; " +
+            "if ($g.Count -gt 0 -and $b.Enabled) { " +
+            "if ($off -notcontains $x.Name) { New-Item -ItemType Directory -Force (Split-Path $m) | Out-Null; Add-Content $m $x.Name; $off += $x.Name }; " +
+            "Disable-NetAdapterBinding -Name $x.Name -ComponentID ms_tcpip6 -Confirm:$false } ";
+        const string Restore6 = "foreach ($n in $off) { Enable-NetAdapterBinding -Name $n -ComponentID ms_tcpip6 -Confirm:$false -ErrorAction SilentlyContinue }; if (Test-Path $m) { Remove-Item $m }; ";
+
+        internal static string EnableScript(int set)
         {
             string all = string.Join(",", V4[set].Concat(V6[set]).Select(a => "'" + a + "'").ToArray());
-            return Run("$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ServerAddresses (" + all + ") }; Clear-DnsClientCache");
+            bool own6 = V6[set].Length > 0;
+            return Off6List + "$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ServerAddresses (" + all + "); " +
+                (own6 ? "" : TurnOff6) + "}; " + (own6 ? Restore6 : "") + "Clear-DnsClientCache";
         }
 
-        public static string Disable()
+        internal static string DisableScript()
         {
-            return Run("$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ResetServerAddresses }; Clear-DnsClientCache");
+            return Off6List + "$a = Get-NetAdapter | Where-Object Status -eq 'Up'; foreach ($x in $a) { Set-DnsClientServerAddress -InterfaceIndex $x.ifIndex -ResetServerAddresses }; " +
+                Restore6 + "Clear-DnsClientCache";
         }
 
         static string Run(string script)
