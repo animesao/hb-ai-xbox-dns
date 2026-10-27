@@ -1,6 +1,8 @@
 # HB AI · Smart DNS — ChatGPT, Claude, Gemini и ElevenLabs одной кнопкой
 
-Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 (есть и [версия для Mac](#для-mac)) одной кнопкой включает Smart DNS — [Comss.one](https://www.comss.ru/), [GeoHide](https://geohide.ru/), [MagicDNS](https://magicdns.ru/) или Astracat, — и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
+Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 (есть и [версия для Mac](#для-mac)) одной кнопкой включает Smart DNS — [Comss.one](https://www.comss.ru/), [GeoHide](https://geohide.ru/) или [MagicDNS](https://magicdns.ru/), — и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
+
+> **Версия 1.22, 27 октября 2026.** Программа сама сообщает о новых версиях: при запуске она смотрит последний релиз на GitHub, и если он новее, вместо кнопки группы появляется жёлтая «Скачать версию …». Astracat убран: 27.10.2026 его DNS не отвечал. Если у вас остались адреса Astracat или российского узла GeoHide из прошлых версий, программа так и пишет и по нажатию кнопки ставит рабочие. Если у провайдера есть IPv6, программа на время Smart DNS выключает IPv6 на подключении (иначе Windows ходит к сайтам мимо Smart DNS) и включает его обратно при выключении. Исправлено: окно прыгало при нажатии на кнопку с движением мыши, «Найти лучший» переключал DNS, даже когда ни один сервис не работает, сбой при смене сервиса проходил молча, проверка иногда писала «DNS молчит» из-за одного потерянного пакета. Версия для Mac не менялась.
 
 > **Версия 1.21, 24 октября 2026.** Окно программы для Windows подстраивается под масштаб экрана: при 125–150 % и выше текст больше не наползает и не обрезается, а если окно не помещается по высоте (ноутбук с масштабом 150 %), оно уменьшается целиком. Смена масштаба и перенос окна на другой монитор тоже учитываются. Версия для Mac не менялась.
 >
@@ -16,7 +18,7 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 2. Если Windows напишет «Windows защитила ваш компьютер», нажмите **Подробнее** → **Выполнить в любом случае**, а на вопрос о правах администратора — **Да**.
 3. Выберите сервис и нажмите большую кнопку в окне программы.
 
-Не скачивается по кнопке? Прямые ссылки: [для Windows](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 219 КБ · Windows 10/11, [для Mac](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip) · 850 КБ · macOS 13+. Бесплатно, открытый код.
+Не скачивается по кнопке? Прямые ссылки: [для Windows](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 230 КБ · Windows 10/11, [для Mac](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip) · 850 КБ · macOS 13+. Бесплатно, открытый код.
 
 <img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
@@ -27,12 +29,11 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 - Включает Smart DNS на всех активных сетевых подключениях, а выключает, возвращая обычный DNS от роутера или провайдера.
 - Даёт выбрать сервис:
 
-| Кнопка | Адреса | Что открывает (проверено 23.10.2026 из Москвы, МГТС) |
+| Кнопка | Адреса | Что открывает (проверено 27.10.2026 из Москвы, МГТС) |
 |---|---|---|
-| Comss | `83.220.169.155`, `212.109.195.93` | ChatGPT, Claude, ElevenLabs, Grok, Perplexity; Gemini — капча Google |
-| GeoHide EU | `143.20.64.192`, `45.13.237.213` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity |
+| Comss | `83.220.169.155`, `212.109.195.93` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity |
+| GeoHide EU | `143.20.64.192`, `45.13.237.213` | ChatGPT, Claude, ElevenLabs, Grok, Perplexity; Gemini — капча Google |
 | MagicDNS | `109.120.132.43`, `94.249.177.102` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity |
-| Astracat | `135.106.217.200` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity |
 | Xbox | `111.88.96.54`, `111.88.96.55` | только Xbox Live, нейросети — нет |
 
 - Кнопка **«Проверить»** спрашивает DNS выбранного сервиса напрямую, подключается к выданному адресу и показывает по каждому сайту: открывается, блок страны, капча Google или нет связи. DNS для этого включать не обязательно.
@@ -67,15 +68,20 @@ certutil -hashfile HB_AI_Xbox_DNS.exe SHA256
 
 ## Как это работает
 
-Программа вызывает стандартные команды PowerShell, больше она ничего не делает:
+Программа вызывает стандартные команды PowerShell:
 
 ```powershell
 # включить
 Set-DnsClientServerAddress -InterfaceIndex <адаптер> -ServerAddresses ('83.220.169.155','212.109.195.93')
+# только если у провайдера есть IPv6: выключить его на время Smart DNS (имя адаптера запоминается)
+Disable-NetAdapterBinding -Name <адаптер> -ComponentID ms_tcpip6
 # выключить
 Set-DnsClientServerAddress -InterfaceIndex <адаптер> -ResetServerAddresses
+Enable-NetAdapterBinding -Name <адаптер> -ComponentID ms_tcpip6   # только там, где программа выключала сама
 Clear-DnsClientCache
 ```
+
+Ещё при запуске программа один раз спрашивает GitHub, какой релиз последний (`/releases/latest`), чтобы сказать о новой версии. Больше она в сеть сама не ходит, кроме проверки сайтов по кнопкам «Проверить» и «Найти лучший».
 
 Весь код лежит в одном файле: [XboxDns.cs](XboxDns.cs).
 
@@ -123,13 +129,13 @@ build.bat
 
 ## Важно
 
-- Программа не связана с Comss.one, GeoHide, MagicDNS, Astracat и xbox-dns.ru. Это бесплатные сервисы: доступ через них может пропасть в любой момент. Адреса в программе мы проверяем скриптом `tools/probe_dns.py` и обновляем.
+- Программа не связана с Comss.one, GeoHide, MagicDNS и xbox-dns.ru. Это бесплатные сервисы: доступ через них может пропасть в любой момент. Адреса в программе мы проверяем скриптом `tools/probe_dns.py` и обновляем.
 - Пользуйтесь сервисами по их правилам. Ресурсы, заблокированные в России, программа не открывает.
 - Всё, что вы делаете с программой, вы делаете на свой риск.
 
 ## In English
 
-**HB AI · Smart DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets Comss.one, GeoHide, MagicDNS, Astracat or xbox-dns.ru DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 219 KB exe that runs two PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`) and has a built-in reachability check for ChatGPT, Claude, Gemini, ElevenLabs, Grok and Perplexity. Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
+**HB AI · Smart DNS** is a free, open-source one-click Smart DNS switcher for Windows 10/11. It sets Comss.one, GeoHide, MagicDNS or xbox-dns.ru DNS servers on all active network adapters (or resets them back to automatic), so services that restrict access from Russia — Gemini, ElevenLabs, ChatGPT, Claude — open normally, while all other traffic goes directly. No VPN, no background service, no installation: a single 230 KB exe that runs PowerShell commands (`Set-DnsClientServerAddress`, `Clear-DnsClientCache`, and `Disable/Enable-NetAdapterBinding` for IPv6 when the ISP provides it), checks GitHub for a newer release on start, and has a built-in reachability check for ChatGPT, Claude, Gemini, ElevenLabs, Grok and Perplexity. Written in C#, MIT license. [Download the latest release](https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe).
 
 ## Лицензия
 

@@ -1,4 +1,4 @@
-// HB AI · Smart DNS 1.21 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, Astracat, xbox-dns.ru) со встроенной проверкой.
+// HB AI · Smart DNS 1.22 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11).
 using System;
 using System.Diagnostics;
@@ -19,35 +19,35 @@ namespace HbAi.XboxDns
 {
     static class Dns
     {
-        // Сервисы Smart DNS. Проверено 23.10.2026 из России (МГТС, Москва), tools/probe_dns.py:
-        // MagicDNS и Astracat открывают ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity; GeoHide Европа — то же;
-        // Comss.one — всё, кроме Gemini (прокси Comss упирается в капчу Google). Российские узлы GeoHide
-        // (159.194.200.33, 193.233.112.x) отвечают, но их прокси из России не открываются — убраны.
+        // Сервисы Smart DNS. Проверено 27.10.2026 из России (МГТС, Москва) кодом кнопки «Проверить»:
+        // Comss.one и MagicDNS открывают ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity; GeoHide Европа — всё,
+        // кроме Gemini (капча Google). Astracat (135.106.217.200, 85.209.2.112) не отвечает — убран в 1.22.
+        // Российские узлы GeoHide (159.194.200.33, 193.233.112.x) отвечают, но их прокси из России не открываются.
         // xbox-dns.ru с 10.10.2026 на нейросети отвечает 0.0.0.0, оставлен только для Xbox Live.
-        public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Astracat", "Xbox DNS" };
-        public static readonly string[] Short = { "Comss", "GeoHide", "MagicDNS", "Astracat", "Xbox" };
+        public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Xbox DNS" };
+        public static readonly string[] Short = { "Comss", "GeoHide", "MagicDNS", "Xbox" };
         public static readonly string[][] V4 = {
             new[] { "83.220.169.155", "212.109.195.93" },
             new[] { "143.20.64.192", "45.13.237.213" },
             new[] { "109.120.132.43", "94.249.177.102" },
-            new[] { "135.106.217.200" },
             new[] { "111.88.96.54", "111.88.96.55" } };
         public static readonly string[][] V6 = {
-            new string[0], new string[0], new string[0], new string[0],
+            new string[0], new string[0], new string[0],
             new[] { "2a00:ab00:1233:26::50", "2a00:ab00:1233:26::51" } };
         public static readonly string[] Opens = {
+            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
             "ChatGPT, Claude, ElevenLabs, Grok; Gemini — через раз",
             "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
-            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
-            "ChatGPT, Claude, Gemini, ElevenLabs, Grok",
             "только Xbox Live, нейросети — нет" };
-        public static readonly string[] Site = { "comss.ru", "geohide.ru", "magicdns.ru", "astracat", "xbox-dns.ru" };
-        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://magicdns.ru/", "https://astracat2022.github.io/dns/", "https://xbox-dns.ru/" };
+        public static readonly string[] Site = { "comss.ru", "geohide.ru", "magicdns.ru", "xbox-dns.ru" };
+        public static readonly string[] Url = { "https://www.comss.ru/", "https://geohide.ru/", "https://magicdns.ru/", "https://xbox-dns.ru/" };
         public static int Count { get { return Name.Length; } }
-        public const int XboxSet = 4;
-        // Адреса из прежних версий: xbox-dns.ru 1.0 и российский узел GeoHide 1.1
+        public const int XboxSet = 3;
+        // Адреса из прежних версий. Старый xbox-dns.ru (1.0) — тот же сервис для Xbox.
+        // Российский узел GeoHide (1.1) и Astracat (1.2–1.21) из России нейросети не открывают: если они стоят,
+        // программа не выдаёт их за рабочий сервис, а предлагает нажать кнопку и поставить рабочие адреса.
         static readonly string[] XboxOld = { "111.88.96.50", "111.88.96.51" };
-        static readonly string[] GeoHideOld = { "159.194.200.33", "193.233.112.67" };
+        static readonly string[] Stale = { "159.194.200.33", "193.233.112.67", "135.106.217.200", "85.209.2.112" };
 
         // -1 — DNS сервиса не стоит, иначе номер набора (IPv4 определяет набор)
         public static int ActiveSet()
@@ -71,8 +71,18 @@ namespace HbAi.XboxDns
             string s = address.Split('%')[0].ToLowerInvariant();
             for (int k = 0; k < V4.Length; k++) if (V4[k].Contains(s) || V6[k].Contains(s)) return k;
             if (XboxOld.Contains(s)) return XboxSet;
-            if (GeoHideOld.Contains(s)) return 1;
             return -1;
+        }
+
+        // адрес из прежних версий, который больше не работает
+        public static bool IsStale(string address) { return Stale.Contains(address.Split('%')[0].ToLowerInvariant()); }
+
+        // стоят ли в Windows нерабочие адреса прежних версий
+        public static bool StaleActive()
+        {
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .Where(ni => ni.OperationalStatus == OperationalStatus.Up && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                .Any(ni => ni.GetIPProperties().DnsAddresses.Any(ip => IsStale(ip.ToString())));
         }
 
         public static string Enable(int set) { return Run(EnableScript(set)); }
@@ -297,7 +307,7 @@ namespace HbAi.XboxDns
 
     class MainForm : Form
     {
-        const string Version = "1.21";   // та же версия в app.manifest (1.2.1.0) и в первой строке файла
+        internal const string Version = "1.22";   // та же версия в app.manifest (1.2.2.0) и в первой строке файла
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
         static readonly Color Violet = Color.FromArgb(140, 112, 255);
         static readonly Color Yellow = Color.FromArgb(255, 224, 102);
@@ -315,7 +325,8 @@ namespace HbAi.XboxDns
 
         readonly PrivateFontCollection fonts = new PrivateFontCollection();
         FontFamily fHead, fBold, fMed;
-        bool active, busy;
+        bool active, busy, stale;
+        string update;   // номер новой версии на GitHub; null — новой нет или не узнали
         int dnsSet;
         string error;
         float pulse;
@@ -352,6 +363,10 @@ namespace HbAi.XboxDns
             int cur = Dns.ActiveSet();
             active = cur >= 0;
             dnsSet = cur >= 0 ? cur : 0;
+            stale = !active && Dns.StaleActive();
+            // о новой версии узнаём в фоне; при снимке окна (--shot) в сеть не ходим
+            if (ForceScale <= 0)
+                ThreadPool.QueueUserWorkItem(_ => { string v = Updates.Newer(Version); if (v != null) Ui(() => { update = v; Invalidate(); }); });
             int segW = (LW - 56) / Dns.Count;
             for (int k = 0; k < Dns.Count; k++) rSeg[k] = new Rectangle(28 + k * segW, 500, segW, 56);
             MouseDown += OnDown;
@@ -518,7 +533,7 @@ namespace HbAi.XboxDns
 
         void DrawStatus(Graphics g)
         {
-            string status = busy ? "Применяем настройки…" : active ? "DNS включён" : "DNS выключен";
+            string status = busy ? "Применяем настройки…" : active ? "DNS включён" : stale ? "Стоят старые адреса DNS" : "DNS выключен";
             using (var f = Pt(fHead, 15f))
             using (var b = new SolidBrush(active && !busy ? Yellow : Color.White))
                 Centered(g, status, f, b, 420);
@@ -532,6 +547,7 @@ namespace HbAi.XboxDns
             if (error != null) return error;
             if (bestNote != null) return bestNote;
             if (busy) return "Секунду";
+            if (!active && stale) return "Через них нейросети не откроются. Нажмите кнопку — поставим рабочие";
             return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
         }
 
@@ -589,16 +605,19 @@ namespace HbAi.XboxDns
 
         static Color ResultColor(string r, Color bad) { return r == Probe.Ok ? OkGreen : r == Probe.Captcha ? Yellow : bad; }
 
-        // кнопка группы ВКонтакте и подвал
+        // кнопка группы ВКонтакте (или «Скачать версию …», если вышла новая) и подвал
         void DrawFooter(Graphics g)
         {
             rVk = new Rectangle(28, 742, LW - 56, 56);
             using (var path = RoundPath(rVk, 16))
-            using (var b = new LinearGradientBrush(rVk, Color.FromArgb(124, 92, 255), Color.FromArgb(76, 124, 255), LinearGradientMode.Horizontal))
-                g.FillPath(b, path);
+                if (update != null)
+                    using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
+                else
+                    using (var b = new LinearGradientBrush(rVk, Color.FromArgb(124, 92, 255), Color.FromArgb(76, 124, 255), LinearGradientMode.Horizontal))
+                        g.FillPath(b, path);
             using (var f = Pt(fHead, 11.5f))
-            using (var b = new SolidBrush(Color.White))
-                g.DrawString("Наша группа ВКонтакте  →", f, b, rVk, Center);
+            using (var b = new SolidBrush(update != null ? Ink : Color.White))
+                g.DrawString(update != null ? "Скачать версию " + update + "  →" : "Наша группа ВКонтакте  →", f, b, rVk, Center);
             using (var fb = Pt(fHead, 13f))
             using (var bb = new SolidBrush(Violet))
                 g.DrawString("HB AI", fb, bb, 28, 812);
@@ -687,6 +706,7 @@ namespace HbAi.XboxDns
             if (rMin.Contains(lp)) { WindowState = FormWindowState.Minimized; return; }
             if (rGroup.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
             if (rSite.Contains(lp)) { Open(Dns.Url[dnsSet]); return; }
+            if (rVk.Contains(lp) && update != null) { Open(Updates.Page); return; }
             if (rBrand.Contains(lp) || rVk.Contains(lp)) { Open("https://vk.com/neiroseti_ai"); return; }
             if (InToggle(lp)) { Toggle(); return; }
             for (int k = 0; k < Dns.Count; k++)
@@ -799,6 +819,7 @@ namespace HbAi.XboxDns
                 {
                     busy = false;
                     active = now >= 0;
+                    stale = !active && Dns.StaleActive();
                     if (active) dnsSet = now;
                     // Раньше ошибку показывали, только если не совпало «включён/выключен». При смене сервиса
                     // на включённом DNS сбой проходил молча: оставался старый сервис, а подпись не менялась.
@@ -824,6 +845,47 @@ namespace HbAi.XboxDns
         {
             try { if (IsHandleCreated && !IsDisposed) BeginInvoke(a); }
             catch (InvalidOperationException) { }
+        }
+    }
+
+    // Новая версия: GitHub отвечает на /releases/latest переадресацией на /releases/tag/vX.YY — из неё берём номер.
+    // Без API и без ключей, один запрос при запуске; не получилось — молчим.
+    static class Updates
+    {
+        public const string Page = "https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest";
+
+        // номер версии из адреса переадресации; null — адрес не про релиз
+        public static string TagOf(string location)
+        {
+            if (location == null) return null;
+            int i = location.LastIndexOf("/tag/v", StringComparison.Ordinal);
+            return i < 0 ? null : location.Substring(i + 6).Trim();
+        }
+
+        // новее ли версия: номера сравниваются как десятичные дроби (1.21 < 1.22 < 1.3), как их и выпускаем
+        public static bool IsNewer(string latest, string current)
+        {
+            decimal a, b;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            return decimal.TryParse(latest, System.Globalization.NumberStyles.Number, ci, out a)
+                && decimal.TryParse(current, System.Globalization.NumberStyles.Number, ci, out b) && a > b;
+        }
+
+        // номер новой версии или null
+        public static string Newer(string current)
+        {
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                var rq = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(Page);
+                rq.Method = "HEAD"; rq.AllowAutoRedirect = false; rq.Timeout = 8000; rq.UserAgent = "HB-AI-Smart-DNS/" + MainForm.Version;
+                using (var rs = (System.Net.HttpWebResponse)rq.GetResponse())
+                {
+                    string v = TagOf(rs.Headers["Location"]);
+                    return v != null && IsNewer(v, current) ? v : null;
+                }
+            }
+            catch { return null; }
         }
     }
 

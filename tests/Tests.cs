@@ -31,6 +31,7 @@ namespace HbAi.XboxDns
             BestService();
             KnownAddresses();
             SiteAnswers();
+            NewVersion();
             WindowDrag();
             PowerShellRun();
             Ipv6();
@@ -168,7 +169,11 @@ namespace HbAi.XboxDns
             T("Второй адрес Comss узнаётся", () => Eq(0, Dns.SetOf("212.109.195.93")));
             T("IPv6 Xbox с зоной и заглавными буквами узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("2A00:AB00:1233:26::51%12")));
             T("Адрес Xbox DNS из версии 1.0 узнаётся", () => Eq(Dns.XboxSet, Dns.SetOf("111.88.96.50")));
-            T("Адрес GeoHide из версии 1.1 узнаётся", () => Eq(1, Dns.SetOf("193.233.112.67")));
+            T("Нерабочий адрес GeoHide из версии 1.1 не выдаётся за сервис", () => Eq(-1, Dns.SetOf("193.233.112.67")));
+            T("Нерабочий адрес GeoHide из версии 1.1 помечен как старый", () => Eq(true, Dns.IsStale("193.233.112.67")));
+            T("Адрес Astracat из версий 1.2–1.21 помечен как старый", () => Eq(true, Dns.IsStale("135.106.217.200")));
+            T("Рабочий адрес MagicDNS не старый", () => Eq(false, Dns.IsStale("109.120.132.43")));
+            T("DNS роутера не старый", () => Eq(false, Dns.IsStale("192.168.1.1")));
             T("DNS роутера — не сервис", () => Eq(-1, Dns.SetOf("192.168.1.1")));
             T("Google 8.8.8.8 — не сервис", () => Eq(-1, Dns.SetOf("8.8.8.8")));
         }
@@ -191,6 +196,37 @@ namespace HbAi.XboxDns
                 Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /service-not-available\r\n\r\n")));
             T("Адрес страницы блока заглавными буквами", () =>
                 Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /Unsupported-Country\r\n\r\n")));
+        }
+
+        // ---------- новая версия ----------
+
+        static void NewVersion()
+        {
+            T("Номер версии из переадресации GitHub", () =>
+                Eq("1.23", Updates.TagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/v1.23")));
+            T("Переадресация не на релиз — номера нет", () => Eq(null, Updates.TagOf("https://github.com/login")));
+            T("Нет переадресации — номера нет", () => Eq(null, Updates.TagOf(null)));
+            T("1.23 новее 1.22", () => Eq(true, Updates.IsNewer("1.23", "1.22")));
+            T("1.3 новее 1.22 (номера как десятичные дроби)", () => Eq(true, Updates.IsNewer("1.3", "1.22")));
+            T("Та же версия — не новее", () => Eq(false, Updates.IsNewer("1.22", "1.22")));
+            T("Старая версия на GitHub — не новее", () => Eq(false, Updates.IsNewer("1.21", "1.22")));
+            T("Непонятный номер — не новее", () => Eq(false, Updates.IsNewer("beta", "1.22")));
+
+            T("Кнопка «Скачать версию …» вместо кнопки группы, когда вышла новая", () =>
+            {
+                MainForm.ForceScale = 1f;
+                using (var f = new MainForm())
+                using (var plain = new Bitmap(440, 852))
+                using (var upd = new Bitmap(440, 852))
+                {
+                    f.DrawToBitmap(plain, new Rectangle(0, 0, 440, 852));
+                    typeof(MainForm).GetField("update", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(f, "1.23");
+                    f.DrawToBitmap(upd, new Rectangle(0, 0, 440, 852));
+                    // середина кнопки: была фиолетовой, стала жёлтой
+                    Eq(true, plain.GetPixel(60, 750).B > 200, "до:");
+                    Eq(true, upd.GetPixel(60, 750).R > 200 && upd.GetPixel(60, 750).B < 150, "после:");
+                }
+            });
         }
 
         // ---------- окно: перетаскивание ----------
