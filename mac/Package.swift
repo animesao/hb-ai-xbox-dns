@@ -9,6 +9,11 @@ let package = Package(
         .executableTarget(
             name: "HBAISmartDNS",
             path: "Sources/HBAISmartDNS"
+        ),
+        .testTarget(
+            name: "HBAISmartDNSTests",
+            dependencies: ["HBAISmartDNS"],
+            path: "Tests/HBAISmartDNSTests"
         )
     ]
 )

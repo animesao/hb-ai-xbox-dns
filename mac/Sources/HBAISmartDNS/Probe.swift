@@ -9,21 +9,38 @@ enum Probe {
     static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 
     /// nil — сервер не ответил; "" — ответ без адреса; иначе IPv4.
+    /// Две попытки: UDP-пакет иногда теряется (27.10.2026 GeoHide раз в несколько запросов не отвечал).
     static func resolve(_ server: String, _ host: String) -> String? {
-        let r = Shell.run("/usr/bin/dig", ["+short", "+time=3", "+tries=1", "@\(server)", host, "A"], timeout: 10)
-        if r.out.contains("timed out") || r.out.contains("no servers could be reached") || r.code == -2 { return nil }
-        let ip = r.out.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
+        let r = Shell.run("/usr/bin/dig", ["+short", "+time=3", "+tries=2", "@\(server)", host, "A"], timeout: 15)
+        return parseDig(r.out, timedOut: r.code == -2)
+    }
+
+    /// Разбор вывода `dig +short`: первый адрес IPv4; nil — сервер не ответил.
+    static func parseDig(_ out: String, timedOut: Bool) -> String? {
+        if timedOut || out.contains("timed out") || out.contains("no servers could be reached") { return nil }
+        let ip = out.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespaces) }
             .first { $0.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil }
         return ip ?? ""
+    }
+
+    /// Что сказать по ответу DNS, не заходя на сайт; nil — адрес настоящий, надо проверять сайт.
+    static func verdict(_ ip: String?) -> String? {
+        guard let ip = ip else { return noDns }
+        return ip == "" || ip == "0.0.0.0" ? zero : nil
     }
 
     static func site(_ host: String, _ ip: String) -> String {
         let r = Shell.run("/usr/bin/curl", ["-s", "-o", "/dev/null", "-m", "10", "--noproxy", "*", "-A", ua,
                                              "--resolve", "\(host):443:\(ip)", "-w", "%{http_code} %{redirect_url}", "https://\(host)/"], timeout: 15)
-        let out = r.out
+        return classify(r.out)
+    }
+
+    /// Что видит человек по ответу curl («код адрес_переадресации»): капча Google, «недоступно в стране» или сайт.
+    static func classify(_ out: String) -> String {
         if out.isEmpty || out.hasPrefix("000") { return noLink }
-        if out.contains("/sorry/") { return captcha }
-        for b in ["restrict", "unsupported", "unavailable", "not-available"] where out.contains(b) { return blocked }
+        let o = out.lowercased()
+        if o.contains("/sorry/") { return captcha }
+        for b in ["restrict", "unsupported", "unavailable", "not-available"] where o.contains(b) { return blocked }
         return ok
     }
 
@@ -37,11 +54,8 @@ enum Probe {
             DispatchQueue.global().async {
                 var ip: String? = nil
                 for srv in Services.v4[set] { ip = resolve(srv, h); if ip != nil { break } }
-                let verdict: String
-                if ip == nil { verdict = noDns }
-                else if ip == "" || ip == "0.0.0.0" { verdict = zero }
-                else { verdict = site(h, ip!) }
-                lock.lock(); res[k] = verdict; lock.unlock()
+                let v = verdict(ip) ?? site(h, ip!)
+                lock.lock(); res[k] = v; lock.unlock()
                 group.leave()
             }
         }
@@ -50,4 +64,12 @@ enum Probe {
     }
 
     static func good(_ r: [String]?) -> Int { r?.filter { $0 == ok }.count ?? -1 }
+
+    /// Сервис, где открылось больше всего сайтов; при равенстве остаётся текущий, чтобы не переключать DNS впустую,
+    /// а без текущего среди проверенных — тот, что раньше в списке. Непроверенный (nil), например Xbox, не выбирается.
+    static func best(_ all: [[String]?], current: Int) -> Int {
+        var b = current >= 0 && current < all.count && all[current] != nil ? current : 0
+        for k in all.indices where good(all[k]) > good(all[b]) { b = k }
+        return b
+    }
 }

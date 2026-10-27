@@ -10,11 +10,15 @@ final class Model: ObservableObject {
     @Published var checkSet = -1
     @Published var checking = false
     @Published var bestNote: String?
+    @Published var stale = false      // стоят нерабочие адреса прежних версий
+    @Published var update: String?    // номер новой версии на GitHub
 
     init() {
         let cur = Dns.activeSet()
         active = cur != nil
         dnsSet = cur ?? 0
+        stale = !active && Dns.staleActive()
+        Updates.check { v in DispatchQueue.main.async { self.update = v } }
     }
 
     func toggle() { if !busy { apply(!active) } }
@@ -26,18 +30,34 @@ final class Model: ObservableObject {
         if active { apply(true) }
     }
 
-    func apply(_ turnOn: Bool) {
-        busy = true; error = nil; bestNote = nil
+    /// Встал ли нужный сервис (или, при выключении, никакой).
+    static func reached(_ turnOn: Bool, _ set: Int, _ now: Int?) -> Bool { turnOn ? now == set : now == nil }
+
+    /// Что написать после включения или выключения; nil — всё хорошо.
+    /// Сбой при смене сервиса на включённом DNS тоже виден: «встал» сверяется с нужным сервисом, а не с «включён/выключен».
+    static func outcome(_ turnOn: Bool, done: Bool, err: String?) -> String? {
+        if done { return err.map { (turnOn ? "DNS включён, но: " : "DNS выключен, но: ") + $0 } }
+        return err ?? "Не получилось поменять DNS, попробуйте ещё раз"
+    }
+
+    // note — подпись вместо обычной (её ставит «Найти лучший», он уже всё проверил)
+    func apply(_ turnOn: Bool, note: String? = nil) {
+        busy = true; error = nil; bestNote = note
         let set = dnsSet
         DispatchQueue.global().async {
             let err = turnOn ? Dns.enable(set) : Dns.disable()
-            let now = Dns.activeSet()
+            // macOS применяет DNS не мгновенно — ждём до трёх секунд
+            var now = Dns.activeSet()
+            for _ in 0..<5 where !Model.reached(turnOn, set, now) { Thread.sleep(forTimeInterval: 0.6); now = Dns.activeSet() }
+            let done = Model.reached(turnOn, set, now)
+            let staleNow = now == nil && Dns.staleActive()
             DispatchQueue.main.async {
                 self.busy = false
                 self.active = now != nil
+                self.stale = staleNow
                 if let n = now { self.dnsSet = n }
-                if let e = err, self.active != turnOn { self.error = e }
-                if self.active && err == nil && turnOn { self.runCheck(self.dnsSet) }
+                self.error = Model.outcome(turnOn, done: done, err: err)
+                if done && turnOn && note == nil { self.runCheck(set) }
             }
         }
     }
@@ -56,11 +76,11 @@ final class Model: ObservableObject {
     func runBest() {
         guard !checking else { return }
         checking = true; checkSet = -2; check = nil; bestNote = nil
+        let current = dnsSet
         DispatchQueue.global().async {
-            let n = Services.count - 1 // Xbox DNS не считаем
-            var all = Array(repeating: [String](), count: n)
+            var all = [[String]?](repeating: nil, count: Services.count)
             let lock = NSLock(); let group = DispatchGroup()
-            for s in 0..<n {
+            for s in 0..<Services.count where s != Services.xboxSet {   // Xbox DNS нейросети не открывает
                 group.enter()
                 DispatchQueue.global().async {
                     let r = Probe.service(s)
@@ -69,14 +89,18 @@ final class Model: ObservableObject {
                 }
             }
             group.wait()
-            var best = 0
-            for k in 1..<n where Probe.good(all[k]) > Probe.good(all[best]) { best = k }
+            let best = Probe.best(all, current: current)
             let good = Probe.good(all[best])
             DispatchQueue.main.async {
                 self.checking = false; self.check = all[best]; self.checkSet = best
-                self.bestNote = good == 0 ? "Сейчас ни один сервис не открывает нейросети"
+                let note = good == 0 ? "Сейчас ни один сервис не открывает нейросети"
                     : "Лучший сейчас: \(Services.name[best]) (\(good) из \(Probe.host.count))"
-                if best != self.dnsSet { self.dnsSet = best; if self.active { self.apply(true) } }
+                // ничего не открывается, идёт переключение или человек уже выбрал другой сервис — DNS не трогаем
+                if good > 0 && !self.busy && self.dnsSet == current && best != self.dnsSet {
+                    self.dnsSet = best
+                    if self.active { self.apply(true, note: note); return }
+                }
+                self.bestNote = note
             }
         }
     }
@@ -113,7 +137,7 @@ struct ContentView: View {
         Button { open(Services.url[m.dnsSet]) } label: {
             HStack(spacing: 8) {
                 Circle().fill(Palette.yellow).frame(width: 10, height: 10)
-                Text("Smart DNS 1.2 · " + Services.site[m.dnsSet]).font(Fonts.bold(11)).foregroundColor(Palette.soft)
+                Text("Smart DNS " + Updates.version + " · " + Services.site[m.dnsSet]).font(Fonts.bold(11)).foregroundColor(Palette.soft)
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(Capsule().fill(Palette.violet.opacity(0.16)))
@@ -158,9 +182,10 @@ struct ContentView: View {
 
     var status: some View {
         VStack(spacing: 6) {
-            Text(m.busy ? "Применяем настройки…" : m.active ? "DNS включён" : "DNS выключен")
+            Text(m.busy ? "Применяем настройки…" : m.active ? "DNS включён" : m.stale ? "Стоят старые адреса DNS" : "DNS выключен")
                 .font(Fonts.head(15)).foregroundColor(m.active && !m.busy ? Palette.yellow : .white)
-            Text(m.error ?? m.bestNote ?? (m.busy ? "Секунду" : m.active ? Services.name[m.dnsSet] + ": " + Services.opens[m.dnsSet] : "Обычный DNS от роутера или провайдера"))
+            Text(m.error ?? m.bestNote ?? (m.busy ? "Секунду" : m.active ? Services.name[m.dnsSet] + ": " + Services.opens[m.dnsSet]
+                 : m.stale ? "Через них нейросети не откроются. Нажмите кнопку — поставим рабочие" : "Обычный DNS от роутера или провайдера"))
                 .font(Fonts.med(10.5)).foregroundColor(m.error != nil ? Color(red: 1, green: 138 / 255, blue: 138 / 255) : Palette.muted)
                 .multilineTextAlignment(.center).frame(maxWidth: 380)
         }
@@ -233,11 +258,15 @@ struct ContentView: View {
         .disabled(m.checking)
     }
 
+    // кнопка группы ВКонтакте или, если вышла новая версия, жёлтая «Скачать версию …»
     var vkButton: some View {
-        Button { open("https://vk.com/neiroseti_ai") } label: {
-            Text("Наша группа ВКонтакте  →").font(Fonts.head(11.5)).foregroundColor(.white)
+        Button { open(m.update != nil ? Updates.page : "https://vk.com/neiroseti_ai") } label: {
+            Text(m.update.map { "Скачать версию \($0)  →" } ?? "Наша группа ВКонтакте  →").font(Fonts.head(11.5))
+                .foregroundColor(m.update != nil ? Palette.ink : .white)
                 .frame(maxWidth: .infinity).frame(height: 56)
-                .background(RoundedRectangle(cornerRadius: 16).fill(LinearGradient(colors: [Color(red: 124 / 255, green: 92 / 255, blue: 1), Color(red: 76 / 255, green: 124 / 255, blue: 1)], startPoint: .leading, endPoint: .trailing)))
+                .background(RoundedRectangle(cornerRadius: 16).fill(m.update != nil
+                    ? AnyShapeStyle(Palette.yellow)
+                    : AnyShapeStyle(LinearGradient(colors: [Color(red: 124 / 255, green: 92 / 255, blue: 1), Color(red: 76 / 255, green: 124 / 255, blue: 1)], startPoint: .leading, endPoint: .trailing))))
         }
         .buttonStyle(.plain)
     }
