@@ -169,7 +169,7 @@ namespace HbAi.XboxDns
 
             T("Капча Google не считается открывшимся сайтом", () =>
                 Eq(1, Probe.Best(new[] {
-                    new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok },
+                    new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok },
                     Res(5), null, null, null }, -1)));
 
             T("При равенстве остаётся текущий сервис", () =>
@@ -184,18 +184,18 @@ namespace HbAi.XboxDns
             T("Непроверенный сервис не выбирается, даже если стоит первым", () =>
                 Eq(1, Probe.Best(new[] { null, Res(0), Res(0) }, -1)));
 
-            T("Discord и YouTube не влияют на выбор: считается только нейросети", () =>
+            T("Discord, YouTube, Roblox, Steam не влияют на выбор: считается только нейросети", () =>
             {
-                // оба открывают 3 нейросети; первый — ещё Discord и YouTube, но на выбор это не влияет
-                var a = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok };
-                var b = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
+                // оба открывают 3 нейросети; первый — ещё Discord, YouTube, Roblox, Steam, но на выбор это не влияет
+                var a = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok };
+                var b = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
                 Eq(0, Probe.Best(new[] { a, b, null, null }, -1), "равные нейросети — остаётся первый:");
-                // 4 нейросети против 3 (не считая Discord/YouTube) — лучший второй, хоть Discord у него и не открыт
-                var d = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
+                // 4 нейросети против 3 (не считая DPI-сервисов) — лучший второй, хоть сервисы у него и не открыты
+                var d = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
                 Eq(1, Probe.Best(new[] { a, d, null, null }, -1), "нейросетей больше у второго:");
-                // Discord и YouTube открыты, нейросети нет — сервис не лучше того, кто открыл хоть одну нейросеть
-                var onlyDy = new[] { Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok };
-                Eq(0, Probe.Best(new[] { onlyDy, Res(0), null, null }, -1), "одни Discord и YouTube не делают лучшим:");
+                // DPI-сервисы открыты, нейросети нет — сервис не лучше того, кто открыл хоть одну нейросеть
+                var onlyDy = new[] { Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok };
+                Eq(0, Probe.Best(new[] { onlyDy, Res(0), null, null }, -1), "одни DPI-сервисы не делают лучшим:");
             });
         }
 
@@ -512,15 +512,29 @@ namespace HbAi.XboxDns
 
         static void DpiBypass()
         {
-            T("PAC-скрипт содержит правила для YouTube и Discord", () =>
+            T("PAC-скрипт содержит правила для YouTube, Discord, Roblox, Steam и др.", () =>
             {
                 string pac = DpiService.PacScript(2080);
                 Eq(true, pac.Contains("FindProxyForURL"));
                 Eq(true, pac.Contains("discord.com"));
                 Eq(true, pac.Contains("youtube.com"));
                 Eq(true, pac.Contains("googlevideo.com"));
+                Eq(true, pac.Contains("roblox.com"));
+                Eq(true, pac.Contains("steamcommunity.com"));
                 Eq(true, pac.Contains("PROXY 127.0.0.1:2080"));
                 Eq(true, pac.Contains("DIRECT"));
+            });
+
+            T("DpiService.Matches определяет домены обхода блокировок", () =>
+            {
+                Eq(true, DpiService.Matches("discord.com"));
+                Eq(true, DpiService.Matches("gateway.discord.gg"));
+                Eq(true, DpiService.Matches("www.youtube.com"));
+                Eq(true, DpiService.Matches("rr1---sn-xxx.googlevideo.com"));
+                Eq(true, DpiService.Matches("www.roblox.com"));
+                Eq(true, DpiService.Matches("steamcommunity.com"));
+                Eq(false, DpiService.Matches("chatgpt.com"));
+                Eq(false, DpiService.Matches("google.com"));
             });
 
             T("SplitStream делит Client Hello на два фрагмента", () =>

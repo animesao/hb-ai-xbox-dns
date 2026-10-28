@@ -15,8 +15,25 @@ public final class DpiService {
         "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
         "discord.media", "discordcdn.com", "dis.gd", "discord.co",
         "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
-        "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com"
+        "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com",
+        "roblox.com", "rbxcdn.com", "robloxlabs.com", "rbx.com", "rbxmanagers.com",
+        "steamcommunity.com", "steampowered.com", "steamstatic.com",
+        "twitch.tv", "ttvnw.net", "jtvnw.net",
+        "x.com", "twitter.com", "t.co", "twimg.com",
+        "instagram.com", "cdninstagram.com", "threads.net",
+        "spotify.com", "scdn.co",
+        "notion.so", "notion.site"
     ]
+
+    public static func matches(_ host: String) -> Bool {
+        let h = host.lowercased()
+        for d in bypassDomains {
+            if h == d || h.hasSuffix("." + d) {
+                return true
+            }
+        }
+        return false
+    }
 
     public static func pacScript(port: UInt16) -> String {
         let domains = bypassDomains.map { "\"\($0)\"" }.joined(separator: ", ")

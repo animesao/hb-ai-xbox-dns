@@ -5,8 +5,14 @@ import Foundation
 enum Probe {
     // Discord и YouTube — в конце списка: их сервис не проксирует (проверено 27.10.2026 из Москвы), DNS отдаёт
     // их настоящие адреса. Ranked отделяет их от нейросетей: «Найти лучший» выбирает сервис по нейросетям.
-    static let host = ["chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai", "discord.com", "www.youtube.com"]
-    static let label = ["ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity", "Discord", "YouTube"]
+    static let host = [
+        "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai",
+        "discord.com", "www.youtube.com", "www.roblox.com", "steamcommunity.com"
+    ]
+    static let label = [
+        "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity",
+        "Discord", "YouTube", "Roblox", "Steam"
+    ]
     static let ranked = 6   // столько сайтов в начале — нейросети: по ним выбирается лучший сервис
     static let ok = "открывается", blocked = "блок страны", captcha = "капча Google", noLink = "нет связи", noDns = "DNS молчит", zero = "не пускает"
     static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
@@ -33,7 +39,7 @@ enum Probe {
     }
 
     static func site(_ host: String, _ ip: String) -> String {
-        let isDpi = host.contains("discord") || host.contains("youtube")
+        let isDpi = DpiService.matches(host)
         var args = ["-s", "-o", "/dev/null", "-m", "10", "-A", ua]
         if isDpi && DpiService.shared.isRunning {
             args += ["-x", "http://127.0.0.1:\(DpiService.shared.port)", "https://\(host)/", "-w", "%{http_code} %{redirect_url}"]

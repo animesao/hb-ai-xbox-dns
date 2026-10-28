@@ -1,4 +1,4 @@
-// HB AI · Smart DNS 1.24 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
+// HB AI · Smart DNS 1.25 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11). DNS и IPv6 меняются через CIM, без PowerShell.
 using System;
 using System.Diagnostics;
@@ -291,8 +291,14 @@ namespace HbAi.XboxDns
     static class Probe
     {
         // Discord и YouTube — в конце списка: их сервис не проксирует, Ranked отделяет их от нейросетей
-        public static readonly string[] Host = { "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai", "discord.com", "www.youtube.com" };
-        public static readonly string[] Label = { "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity", "Discord", "YouTube" };
+        public static readonly string[] Host = {
+            "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai",
+            "discord.com", "www.youtube.com", "www.roblox.com", "steamcommunity.com"
+        };
+        public static readonly string[] Label = {
+            "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity",
+            "Discord", "YouTube", "Roblox", "Steam"
+        };
         public const int Ranked = 6;   // столько сайтов в начале — нейросети: по ним «Найти лучший» выбирает сервис
         public const string Ok = "открывается", Blocked = "блок страны", Captcha = "капча Google", NoLink = "нет связи", NoDns = "DNS молчит", Zero = "не пускает";
 
@@ -387,8 +393,7 @@ namespace HbAi.XboxDns
                     tcp.EndConnect(ar);
                     tcp.ReceiveTimeout = 8000; tcp.SendTimeout = 8000;
                     Stream netStream = tcp.GetStream();
-                    if (host.IndexOf("discord", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        host.IndexOf("youtube", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (DpiService.Matches(host))
                     {
                         netStream = new SplitStream(netStream, tcp.Client);
                     }
@@ -510,8 +515,28 @@ namespace HbAi.XboxDns
             "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
             "discord.media", "discordcdn.com", "dis.gd", "discord.co",
             "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
-            "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com"
+            "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com",
+            "roblox.com", "rbxcdn.com", "robloxlabs.com", "rbx.com", "rbxmanagers.com",
+            "steamcommunity.com", "steampowered.com", "steamstatic.com",
+            "twitch.tv", "ttvnw.net", "jtvnw.net",
+            "x.com", "twitter.com", "t.co", "twimg.com",
+            "instagram.com", "cdninstagram.com", "threads.net",
+            "spotify.com", "scdn.co",
+            "notion.so", "notion.site"
         };
+
+        public static bool Matches(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            for (int i = 0; i < BypassDomains.Length; i++)
+            {
+                string d = BypassDomains[i];
+                if (host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                    host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
 
         public static string PacScript(int p)
         {
@@ -770,7 +795,7 @@ namespace HbAi.XboxDns
 
     class MainForm : Form
     {
-        internal const string Version = "1.24";   // та же версия в app.manifest (1.2.4.0) и в первой строке файла
+        internal const string Version = "1.25";   // та же версия в app.manifest (1.2.4.0) и в первой строке файла
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
         static readonly Color Violet = Color.FromArgb(140, 112, 255);
         static readonly Color Yellow = Color.FromArgb(255, 224, 102);
@@ -1014,7 +1039,7 @@ namespace HbAi.XboxDns
             if (bestNote != null) return bestNote;
             if (busy) return "Секунду";
             if (!active && stale) return "Через них нейросети не откроются. Нажмите кнопку — поставим рабочие";
-            return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] + " + YouTube, Discord" : "Обычный DNS от роутера или провайдера";
+            return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] + " + YouTube, Discord, Roblox, Steam" : "Обычный DNS от роутера или провайдера";
         }
 
         // выбор сервиса
@@ -1059,7 +1084,7 @@ namespace HbAi.XboxDns
                 float colW = (card.Width - 36) / 2;
                 for (int i = 0; i < Probe.Host.Length; i++)
                 {
-                    float x = card.X + 18 + (i / 4) * colW, y = card.Y + 82 + (i % 4) * 23;
+                    float x = card.X + 18 + (i / 5) * colW, y = card.Y + 76 + (i % 5) * 21;
                     string r = forThis ? check[i] : null;
                     using (var b = new SolidBrush(r == null ? Color.FromArgb(70, 70, 88) : ResultColor(r, BadDot))) g.FillEllipse(b, x, y + 4, 9, 9);
                     using (var b = new SolidBrush(Light)) g.DrawString(Probe.Label[i], fn, b, x + 16, y);

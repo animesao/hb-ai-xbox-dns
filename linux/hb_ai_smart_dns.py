@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HB AI · Smart DNS 1.24 для Linux.
+HB AI · Smart DNS 1.25 для Linux.
 ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube одной кнопкой.
 
 Поддерживает графический интерфейс (Tkinter) и работу из терминала (CLI).
@@ -24,7 +24,7 @@ import urllib.request
 import webbrowser
 from typing import Dict, List, Optional, Set, Tuple
 
-VERSION = "1.24"
+VERSION = "1.25"
 REPO_URL = "https://github.com/animesao/hb-ai-xbox-dns"
 VK_URL = "https://vk.com/neiroseti_ai"
 
@@ -133,6 +133,8 @@ class Probe:
         "www.perplexity.ai",
         "discord.com",
         "www.youtube.com",
+        "www.roblox.com",
+        "steamcommunity.com",
     ]
     LABELS = [
         "ChatGPT",
@@ -143,6 +145,8 @@ class Probe:
         "Perplexity",
         "Discord",
         "YouTube",
+        "Roblox",
+        "Steam",
     ]
     RANKED = 6  # Первые 6 — нейросети, по ним выбирается «лучший» сервис
 
@@ -271,7 +275,7 @@ class Probe:
     @classmethod
     def site(cls, host: str, ip: str) -> str:
         """Проверка доступности сайта по TLS через выданный IP-адрес."""
-        is_dpi_target = "discord" in host.lower() or "youtube" in host.lower()
+        is_dpi_target = DpiService.matches(host)
         if is_dpi_target:
             # Для Discord и YouTube применяем механизм обхода блокировок DPI (фрагментация TLS Client Hello на 8 байт)
             try:
@@ -452,7 +456,24 @@ class DpiService:
         "discord.media", "discordcdn.com", "dis.gd", "discord.co",
         "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
         "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com",
+        "roblox.com", "rbxcdn.com", "robloxlabs.com", "rbx.com", "rbxmanagers.com",
+        "steamcommunity.com", "steampowered.com", "steamstatic.com",
+        "twitch.tv", "ttvnw.net", "jtvnw.net",
+        "x.com", "twitter.com", "t.co", "twimg.com",
+        "instagram.com", "cdninstagram.com", "threads.net",
+        "spotify.com", "scdn.co",
+        "notion.so", "notion.site",
     ]
+
+    @classmethod
+    def matches(cls, host: str) -> bool:
+        if not host:
+            return False
+        h = host.lower()
+        for d in cls.BYPASS_DOMAINS:
+            if h == d or h.endswith("." + d):
+                return True
+        return False
 
     @classmethod
     def pac_script(cls, p: int) -> str:
@@ -1088,7 +1109,7 @@ def run_gui():
 
     sub_label = tk.Label(
         root,
-        text="ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube",
+        text="ChatGPT, Claude, Gemini, ElevenLabs, Discord, YouTube, Roblox...",
         font=("Helvetica", 10),
         fg=TEXT_MUTED,
         bg=BG,
@@ -1285,11 +1306,11 @@ def run_gui():
     site_dots = []
     site_texts = []
 
-    # 2 колонки по 4 строки
-    # [ChatGPT, Claude, Gemini, ElevenLabs], [Grok, Perplexity, Discord, YouTube]
+    # 2 колонки по 5 строк
+    # [ChatGPT, Claude, Gemini, ElevenLabs, Grok], [Perplexity, Discord, YouTube, Roblox, Steam]
     for i in range(len(Probe.HOSTS)):
-        col = i // 4
-        row = i % 4
+        col = i // 5
+        row = i % 5
         cell = tk.Frame(sites_grid, bg=CARD_BG)
         cell.grid(row=row, column=col, sticky="w", padx=4, pady=3)
         sites_grid.columnconfigure(col, weight=1)
@@ -1566,7 +1587,7 @@ def interactive_menu():
 
 def main():
     parser = argparse.ArgumentParser(
-        description=f"HB AI · Smart DNS {VERSION} — ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube одной кнопкой."
+        description=f"HB AI · Smart DNS {VERSION} — ChatGPT, Claude, Gemini, ElevenLabs, Discord, YouTube, Roblox и др. одной кнопкой."
     )
     parser.add_argument("--status", action="store_true", help="Показать текущий статус DNS")
     parser.add_argument("--enable", metavar="SERVICE", help="Включить сервис (comss, geohide, magicdns, xbox или 0..3)")

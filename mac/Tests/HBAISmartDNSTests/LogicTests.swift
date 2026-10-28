@@ -62,11 +62,11 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Probe.best([res(0), res(0), res(0), nil], current: 1), 1, "ничего не открывается — остаётся текущий")
         XCTAssertEqual(Probe.best([res(2), res(4), res(3), nil], current: Services.xboxSet), 1, "текущий Xbox не мешает")
         XCTAssertEqual(Probe.best([nil, res(0), res(0)], current: -1), 1, "непроверенный первым не выбирается")
-        let onlyDy = [Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok]
-        XCTAssertEqual(Probe.best([onlyDy, res(0), nil, nil], current: -1), 0, "одни Discord и YouTube не делают лучшим")
-        let dy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok]
-        let noDy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink]
-        XCTAssertEqual(Probe.best([dy, noDy, nil, nil], current: -1), 0, "равные нейросети — остаётся первый, Discord не считается")
+        let onlyDy = [Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok, Probe.ok, Probe.ok]
+        XCTAssertEqual(Probe.best([onlyDy, res(0), nil, nil], current: -1), 0, "одни DPI-сервисы не делают лучшим")
+        let dy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok, Probe.ok, Probe.ok]
+        let noDy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink]
+        XCTAssertEqual(Probe.best([dy, noDy, nil, nil], current: -1), 0, "равные нейросети — остаётся первый, DPI не считается")
     }
 
     // ---------- окно после включения ----------
@@ -84,15 +84,15 @@ final class LogicTests: XCTestCase {
     // ---------- новая версия ----------
 
     func testUpdates() {
-        XCTAssertEqual(Updates.tagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.24"), "1.24")
+        XCTAssertEqual(Updates.tagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.25"), "1.25")
         XCTAssertNil(Updates.tagOf("https://github.com/login"))
         XCTAssertNil(Updates.tagOf(nil))
-        XCTAssertTrue(Updates.isNewer("1.24", than: "1.23"))
-        XCTAssertTrue(Updates.isNewer("1.3", than: "1.24"))
-        XCTAssertFalse(Updates.isNewer("1.24", than: "1.24"))
-        XCTAssertFalse(Updates.isNewer("1.23", than: "1.24"))
-        XCTAssertFalse(Updates.isNewer("beta", than: "1.24"))
-        XCTAssertFalse(Updates.isNewer("1,24", than: "1.24"))
+        XCTAssertTrue(Updates.isNewer("1.25", than: "1.24"))
+        XCTAssertTrue(Updates.isNewer("1.3", than: "1.25"))
+        XCTAssertFalse(Updates.isNewer("1.25", than: "1.25"))
+        XCTAssertFalse(Updates.isNewer("1.24", than: "1.25"))
+        XCTAssertFalse(Updates.isNewer("beta", than: "1.25"))
+        XCTAssertFalse(Updates.isNewer("1,25", than: "1.25"))
     }
 
     // ---------- IPv6 и команды networksetup ----------

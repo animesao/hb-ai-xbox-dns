@@ -1,6 +1,8 @@
-# HB AI · Smart DNS 1.24 — ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube одной кнопкой
+# HB AI · Smart DNS 1.25 — ChatGPT, Claude, Gemini, ElevenLabs, Discord, YouTube, Roblox и Steam одной кнопкой
 
 Gemini, ElevenLabs или ChatGPT пишут «недоступно в вашей стране»? Эта бесплатная программа для Windows 10/11 (есть также [версия для Mac](#для-mac) и [версия для Linux](#для-linux)) одной кнопкой включает Smart DNS — [Comss.one](https://www.comss.ru/), [GeoHide](https://geohide.ru/) или [MagicDNS](https://magicdns.ru/), — и сервисы, которые сами ограничили работу в России, открываются как обычно. Остальной интернет при этом идёт напрямую: банки, Госуслуги и маркетплейсы работают как раньше.
+
+> **Версия 1.25, 28 октября 2026.** В проверку и механизм обхода DPI добавлены **Roblox** и **Steam Community**, а также популярные сервисы (Twitch, Twitter / X, Instagram, Spotify, Notion). Карточка проверки расширена до 10 сервисов (6 нейросетей + 4 DPI-сервиса в двух аккуратных колонках по 5 строк). Встроенный механизм десинхронизации TLS Client Hello снимает блокировки на Windows, Linux и macOS на полной скорости соединения.
 
 > **Версия 1.24, 28 октября 2026.** Встроенный механизм обхода DPI (десинхронизация TCP/TLS, как в Zapret и GoodbyeDPI) для YouTube и Discord на Windows, Linux и macOS. Локальный прокси с автоконфигурацией PAC точечно снимает блокировки с YouTube и Discord на полной скорости соединения без необходимости подключать сторонний VPN.
 
@@ -33,15 +35,15 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 ## Что умеет
 
 - **Smart DNS для нейросетей**: включает Smart DNS на всех активных сетевых подключениях, направляя ChatGPT, Claude, Gemini, ElevenLabs, Grok и Perplexity через зарубежные прокси без использования VPN.
-- **Встроенный обход DPI для YouTube и Discord**: на Windows, Linux и macOS поднимается локальный механизм десинхронизации TCP/TLS-пакетов (сегментация TLS Client Hello, как в Zapret и GoodbyeDPI), благодаря чему ТСПУ провайдера не может прочитать SNI и блокировка снимается на полной скорости вашего интернета (видео 4K в YouTube и голосовые/текстовые каналы Discord). Локальный PAC-скрипт автоматически направляет только трафик YouTube и Discord через обход, оставляя все остальные сайты (банки, Госуслуги, VK, Steam) прямыми (DIRECT).
+- **Встроенный обход DPI для YouTube, Discord, Roblox, Steam и др.**: на Windows, Linux и macOS поднимается локальный механизм десинхронизации TCP/TLS-пакетов (сегментация TLS Client Hello, как в Zapret и GoodbyeDPI), благодаря чему ТСПУ провайдера не может прочитать SNI и блокировка снимается на полной скорости вашего интернета (Roblox, видео 4K в YouTube, голосовые и текстовые каналы Discord, Steam Community, Twitch, Twitter / X, Instagram и др.). Локальный PAC-скрипт автоматически направляет только целевой заблокированный трафик через обход, оставляя все остальные сайты (банки, Госуслуги, VK и др.) прямыми (DIRECT).
 - Даёт выбрать сервис:
 
 | Кнопка | Адреса | Что открывает (проверено из России) |
 |---|---|---|
-| Comss | `94.250.253.55`, `212.109.195.93` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity + YouTube и Discord (обход DPI) |
-| GeoHide EU | `143.20.64.192`, `45.13.237.213` | ChatGPT, Claude, ElevenLabs, Grok, Perplexity; Gemini — капча Google + YouTube и Discord |
-| MagicDNS | `109.120.132.43`, `94.249.177.102` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity + YouTube и Discord (обход DPI) |
-| Xbox | `111.88.96.54`, `111.88.96.55` | только Xbox Live, нейросети — нет + YouTube и Discord (обход DPI) |
+| Comss | `94.250.253.55`, `212.109.195.93` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity + YouTube, Discord, Roblox, Steam (обход DPI) |
+| GeoHide EU | `143.20.64.192`, `45.13.237.213` | ChatGPT, Claude, ElevenLabs, Grok, Perplexity; Gemini — капча Google + YouTube, Discord, Roblox, Steam (обход DPI) |
+| MagicDNS | `109.120.132.43`, `94.249.177.102` | ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity + YouTube, Discord, Roblox, Steam (обход DPI) |
+| Xbox | `111.88.96.54`, `111.88.96.55` | только Xbox Live, нейросети — нет + YouTube, Discord, Roblox, Steam (обход DPI) |
 
 - Кнопка **«Проверить»** спрашивает DNS выбранного сервиса напрямую, подключается к выданному адресу и показывает по каждому сайту: открывается, блок страны, капча Google или нет связи. Для YouTube и Discord проверка также использует встроенный механизм обхода DPI.
 - Кнопка **«Найти лучший»** перебирает все сервисы и включает тот, где открывается больше всего нейросетей.

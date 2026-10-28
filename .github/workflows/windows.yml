@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Тег релиза (например, v1.23 для публикации релиза)'
+        description: 'Тег релиза (например, v1.25 для публикации релиза)'
         required: false
-        default: 'v1.23'
+        default: 'v1.25'
 
 permissions:
   contents: write

@@ -137,9 +137,9 @@ class TestBestServiceSelection(unittest.TestCase):
         res = []
         for i in range(Probe.RANKED):
             res.append(Probe.OK if i < ai_count else Probe.NO_LINK)
-        # Добавляем Discord и YouTube (7-й и 8-й сайты)
-        res.append(Probe.OK if dy_ok else Probe.NO_LINK)
-        res.append(Probe.OK if dy_ok else Probe.NO_LINK)
+        # Добавляем DPI-сервисы (Discord, YouTube, Roblox, Steam)
+        for _ in range(len(Probe.HOSTS) - Probe.RANKED):
+            res.append(Probe.OK if dy_ok else Probe.NO_LINK)
         return res
 
     def test_best_selection(self):
@@ -167,7 +167,7 @@ class TestBestServiceSelection(unittest.TestCase):
         self.assertEqual(Probe.best([res_c, res_a, None, None], current=-1), 0)
 
         # Только Discord и YouTube без нейросетей не делают сервис лучшим
-        only_dy = [Probe.NO_LINK] * 6 + [Probe.OK, Probe.OK]
+        only_dy = [Probe.NO_LINK] * 6 + [Probe.OK] * 4
         res_one = self.make_res(1, dy_ok=False)
         self.assertEqual(Probe.best([only_dy, res_one, None, None], current=-1), 1)
 
@@ -178,12 +178,12 @@ class TestBestServiceSelection(unittest.TestCase):
 
 class TestUpdates(unittest.TestCase):
     def test_is_newer(self):
-        self.assertTrue(Updates.is_newer("1.24", "1.23"))
-        self.assertTrue(Updates.is_newer("1.3", "1.24"))
-        self.assertFalse(Updates.is_newer("1.24", "1.24"))
-        self.assertFalse(Updates.is_newer("1.23", "1.24"))
-        self.assertFalse(Updates.is_newer("beta", "1.24"))
-        self.assertFalse(Updates.is_newer("1,24", "1.24"))
+        self.assertTrue(Updates.is_newer("1.25", "1.24"))
+        self.assertTrue(Updates.is_newer("1.3", "1.25"))
+        self.assertFalse(Updates.is_newer("1.25", "1.25"))
+        self.assertFalse(Updates.is_newer("1.24", "1.25"))
+        self.assertFalse(Updates.is_newer("beta", "1.25"))
+        self.assertFalse(Updates.is_newer("1,25", "1.25"))
 
 
 class TestIpv6Persistence(unittest.TestCase):
@@ -215,8 +215,19 @@ class TestDpiBypass(unittest.TestCase):
         self.assertIn("discord.com", pac)
         self.assertIn("youtube.com", pac)
         self.assertIn("googlevideo.com", pac)
+        self.assertIn("roblox.com", pac)
+        self.assertIn("steamcommunity.com", pac)
         self.assertIn("PROXY 127.0.0.1:2080", pac)
         self.assertIn("DIRECT", pac)
+
+    def test_matches(self):
+        self.assertTrue(DpiService.matches("discord.com"))
+        self.assertTrue(DpiService.matches("gateway.discord.gg"))
+        self.assertTrue(DpiService.matches("www.youtube.com"))
+        self.assertTrue(DpiService.matches("www.roblox.com"))
+        self.assertTrue(DpiService.matches("steamcommunity.com"))
+        self.assertFalse(DpiService.matches("chatgpt.com"))
+        self.assertFalse(DpiService.matches("google.com"))
 
     def test_proxy_service_http_pac(self):
         started = DpiService.start()
