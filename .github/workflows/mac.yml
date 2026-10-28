@@ -1,0 +1,38 @@
+name: mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Тег релиза для прикрепления архива (например, v1.23, оставьте пустым для обычной сборки)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run macOS Tests
+        run: set -o pipefail; cd mac && swift test 2>&1 | tail -60
+      - name: Build macOS App
+        run: bash mac/build.sh
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HB_AI_Smart_DNS_mac
+          path: mac/build/HB_AI_Smart_DNS_mac.zip
+      - name: Attach macOS to Release
+        if: inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.ref_name }}"; fi
+          gh release view "$TAG" || gh release create "$TAG" --title "HB AI · Smart DNS $TAG" --generate-notes
+          gh release upload "$TAG" mac/build/HB_AI_Smart_DNS_mac.zip --clobber

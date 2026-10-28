@@ -1,0 +1,42 @@
+name: linux
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+      - name: Run Linux Tests
+        run: python3 linux/tests.py
+      - name: Build Linux Package
+        run: bash linux/build.sh
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HB_AI_Smart_DNS_linux
+          path: linux/build/HB_AI_Smart_DNS_linux.tar.gz
+      - name: Attach Linux to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" || gh release create "${{ github.ref_name }}" --title "HB AI · Smart DNS ${{ github.ref_name }}" --generate-notes
+          gh release upload "${{ github.ref_name }}" linux/build/HB_AI_Smart_DNS_linux.tar.gz --clobber

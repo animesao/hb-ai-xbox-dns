@@ -68,7 +68,7 @@ certutil -hashfile HB_AI_Xbox_DNS.exe SHA256
 2. При включении DNS macOS попросит пароль администратора: DNS меняется стандартной командой `networksetup -setdnsservers`, а выключение возвращает автоматический DNS (`empty`). Если провайдер даёт IPv6, в той же команде IPv6 выключается (`networksetup -setv6off`) и при выключении возвращается в «Автоматически» (`-setv6automatic`); список таких подключений — в `~/Library/Application Support/HB AI Smart DNS/ipv6-off.txt`.
 3. Кнопки «Проверить» и «Найти лучший» работают так же, как в Windows: через `dig` и `curl`, которые есть в каждой macOS.
 
-Сборка: `bash mac/build.sh` на Mac или в GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)). Код: [mac/Sources/HBAISmartDNS](mac/Sources/HBAISmartDNS). Программа подписана ad hoc, без аккаунта разработчика Apple.
+Сборка: `bash mac/build.sh` на Mac или в GitHub Actions ([.github/workflows/mac.yml](.github/workflows/mac.yml)). Код: [mac/Sources/HBAISmartDNS](mac/Sources/HBAISmartDNS). Программа подписана ad hoc, без аккаунта разработчика Apple.
 
 ## Для Linux
 
@@ -91,7 +91,7 @@ sudo ./install.sh
 
 Поддерживает `systemd-resolved` (`resolvectl`), `NetworkManager` (`nmcli`) и прямое управление `/etc/resolv.conf`. При включении Smart DNS на сетевых интерфейсах с глобальным IPv6 временно выключается IPv6 (`sysctl`), чтобы запросы не уходили к провайдеру, и восстанавливается при выключении.
 
-Сборка: `bash linux/build.sh` или в GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)). Тесты: `python3 linux/tests.py`. Исходный код: [linux/](linux/).
+Сборка: `bash linux/build.sh` или в GitHub Actions ([.github/workflows/linux.yml](.github/workflows/linux.yml)). Тесты: `python3 linux/tests.py`. Исходный код: [linux/](linux/).
 
 ## Как это работает
 
