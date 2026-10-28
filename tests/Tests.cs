@@ -252,16 +252,16 @@ namespace HbAi.XboxDns
         static void NewVersion()
         {
             T("Номер версии из переадресации GitHub", () =>
-                Eq("1.23", Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.23")));
+                Eq("1.24", Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.24")));
             T("Переадресация не на релиз — номера нет", () => Eq(null, Updates.TagOf("https://github.com/login")));
-            T("Тег без «v» — не наш формат, номера нет", () => Eq(null, Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/1.23")));
+            T("Тег без «v» — не наш формат, номера нет", () => Eq(null, Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/1.24")));
             T("Нет переадресации — номера нет", () => Eq(null, Updates.TagOf(null)));
-            T("1.23 новее 1.22", () => Eq(true, Updates.IsNewer("1.23", "1.22")));
-            T("1.3 новее 1.22 (номера как десятичные дроби)", () => Eq(true, Updates.IsNewer("1.3", "1.22")));
-            T("Та же версия — не новее", () => Eq(false, Updates.IsNewer("1.22", "1.22")));
-            T("Старая версия на GitHub — не новее", () => Eq(false, Updates.IsNewer("1.21", "1.22")));
-            T("Непонятный номер — не новее", () => Eq(false, Updates.IsNewer("beta", "1.22")));
-            T("Запятая в номере — не новее (а не 123)", () => Eq(false, Updates.IsNewer("1,23", "1.22")));
+            T("1.24 новее 1.23", () => Eq(true, Updates.IsNewer("1.24", "1.23")));
+            T("1.3 новее 1.24 (номера как десятичные дроби)", () => Eq(true, Updates.IsNewer("1.3", "1.24")));
+            T("Та же версия — не новее", () => Eq(false, Updates.IsNewer("1.24", "1.24")));
+            T("Старая версия на GitHub — не новее", () => Eq(false, Updates.IsNewer("1.23", "1.24")));
+            T("Непонятный номер — не новее", () => Eq(false, Updates.IsNewer("beta", "1.24")));
+            T("Запятая в номере — не новее (а не 124)", () => Eq(false, Updates.IsNewer("1,24", "1.24")));
 
             T("Кнопка «Скачать версию …» вместо кнопки группы, когда вышла новая", () =>
             {
@@ -271,7 +271,7 @@ namespace HbAi.XboxDns
                 using (var upd = new Bitmap(440, 898))
                 {
                     Render(f, plain);
-                    typeof(MainForm).GetField("update", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(f, "1.23");
+                    typeof(MainForm).GetField("update", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(f, "1.25");
                     Render(f, upd);
                     // середина кнопки: была фиолетовой, стала жёлтой
                     Eq(true, plain.GetPixel(60, 796).B > 200, "до:");

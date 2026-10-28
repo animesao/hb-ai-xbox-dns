@@ -84,15 +84,15 @@ final class LogicTests: XCTestCase {
     // ---------- новая версия ----------
 
     func testUpdates() {
-        XCTAssertEqual(Updates.tagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.23"), "1.23")
+        XCTAssertEqual(Updates.tagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.24"), "1.24")
         XCTAssertNil(Updates.tagOf("https://github.com/login"))
         XCTAssertNil(Updates.tagOf(nil))
-        XCTAssertTrue(Updates.isNewer("1.23", than: "1.22"))
-        XCTAssertTrue(Updates.isNewer("1.3", than: "1.22"))
-        XCTAssertFalse(Updates.isNewer("1.22", than: "1.22"))
-        XCTAssertFalse(Updates.isNewer("1.21", than: "1.22"))
-        XCTAssertFalse(Updates.isNewer("beta", than: "1.22"))
-        XCTAssertFalse(Updates.isNewer("1,23", than: "1.22"))
+        XCTAssertTrue(Updates.isNewer("1.24", than: "1.23"))
+        XCTAssertTrue(Updates.isNewer("1.3", than: "1.24"))
+        XCTAssertFalse(Updates.isNewer("1.24", than: "1.24"))
+        XCTAssertFalse(Updates.isNewer("1.23", than: "1.24"))
+        XCTAssertFalse(Updates.isNewer("beta", than: "1.24"))
+        XCTAssertFalse(Updates.isNewer("1,24", than: "1.24"))
     }
 
     // ---------- IPv6 и команды networksetup ----------

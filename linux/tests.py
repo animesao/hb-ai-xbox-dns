@@ -178,12 +178,12 @@ class TestBestServiceSelection(unittest.TestCase):
 
 class TestUpdates(unittest.TestCase):
     def test_is_newer(self):
-        self.assertTrue(Updates.is_newer("1.23", "1.22"))
-        self.assertTrue(Updates.is_newer("1.3", "1.22"))
-        self.assertFalse(Updates.is_newer("1.22", "1.22"))
-        self.assertFalse(Updates.is_newer("1.21", "1.22"))
-        self.assertFalse(Updates.is_newer("beta", "1.22"))
-        self.assertFalse(Updates.is_newer("1,23", "1.22"))
+        self.assertTrue(Updates.is_newer("1.24", "1.23"))
+        self.assertTrue(Updates.is_newer("1.3", "1.24"))
+        self.assertFalse(Updates.is_newer("1.24", "1.24"))
+        self.assertFalse(Updates.is_newer("1.23", "1.24"))
+        self.assertFalse(Updates.is_newer("beta", "1.24"))
+        self.assertFalse(Updates.is_newer("1,24", "1.24"))
 
 
 class TestIpv6Persistence(unittest.TestCase):

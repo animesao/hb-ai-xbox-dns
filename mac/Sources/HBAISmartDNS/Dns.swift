@@ -192,7 +192,7 @@ enum Dns {
 // Новая версия: GitHub отвечает на /releases/latest переадресацией на /releases/tag/vX.YY — из неё берём номер.
 // Без API и без ключей, один запрос при запуске; не получилось — молчим.
 final class Updates: NSObject, URLSessionTaskDelegate {
-    static let version = "1.23"
+    static let version = "1.24"
     static let page = "https://github.com/animesao/hb-ai-xbox-dns/releases/latest"
 
     /// Номер версии из адреса переадресации; nil — адрес не про релиз.

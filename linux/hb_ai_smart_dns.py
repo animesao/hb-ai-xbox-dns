@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HB AI · Smart DNS 1.23 для Linux.
+HB AI · Smart DNS 1.24 для Linux.
 ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube одной кнопкой.
 
 Поддерживает графический интерфейс (Tkinter) и работу из терминала (CLI).
@@ -24,7 +24,7 @@ import urllib.request
 import webbrowser
 from typing import Dict, List, Optional, Set, Tuple
 
-VERSION = "1.23"
+VERSION = "1.24"
 REPO_URL = "https://github.com/animesao/hb-ai-xbox-dns"
 VK_URL = "https://vk.com/neiroseti_ai"
 
