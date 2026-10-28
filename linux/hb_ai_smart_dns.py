@@ -998,11 +998,11 @@ def run_gui():
     site_dots = []
     site_texts = []
 
-    # 3 колонки: 0, 1, 2
-    # [ChatGPT, Claude, Gemini], [ElevenLabs, Grok, Perplexity], [Discord, YouTube]
+    # 2 колонки по 4 строки
+    # [ChatGPT, Claude, Gemini, ElevenLabs], [Grok, Perplexity, Discord, YouTube]
     for i in range(len(Probe.HOSTS)):
-        col = i // 3
-        row = i % 3
+        col = i // 4
+        row = i % 4
         cell = tk.Frame(sites_grid, bg=CARD_BG)
         cell.grid(row=row, column=col, sticky="w", padx=4, pady=3)
         sites_grid.columnconfigure(col, weight=1)

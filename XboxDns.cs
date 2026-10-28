@@ -712,7 +712,7 @@ namespace HbAi.XboxDns
         // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
         void DrawCheck(Graphics g)
         {
-            var card = new RectangleF(28, 574, LW - 56, 196);
+            var card = new RectangleF(28, 574, LW - 56, 188);
             Panel(g, card, 16, CardBg, CardLine);
             using (var fl = Pt(fBold, 9.5f))
             using (var fv = Pt(fMed, 10f))
@@ -726,15 +726,15 @@ namespace HbAi.XboxDns
             rBest = new Rectangle((int)card.Right - 18 - 160, (int)card.Y + 40, 160, 30);
             DrawSmall(g, rCheck, checking && checkSet == dnsSet ? "Проверяем…" : "Проверить " + Dns.Short[dnsSet], !checking);
             DrawSmall(g, rBest, checking && checkSet == -2 ? "Ищем…" : "Найти лучший", !checking);
-            // результаты по сайтам: три колонки по три строки; Discord и YouTube — третья колонка
+            // результаты по сайтам: две колонки по четыре строки
             bool forThis = check != null && checkSet == dnsSet;
             using (var fn = Pt(fMed, 9.5f))
             using (var fs = Pt(fBold, 8f))
             {
-                float colW = (card.Width - 36) / 3;
+                float colW = (card.Width - 36) / 2;
                 for (int i = 0; i < Probe.Host.Length; i++)
                 {
-                    float x = card.X + 18 + (i / 3) * colW, y = card.Y + 82 + (i % 3) * 22;
+                    float x = card.X + 18 + (i / 4) * colW, y = card.Y + 82 + (i % 4) * 23;
                     string r = forThis ? check[i] : null;
                     using (var b = new SolidBrush(r == null ? Color.FromArgb(70, 70, 88) : ResultColor(r, BadDot))) g.FillEllipse(b, x, y + 4, 9, 9);
                     using (var b = new SolidBrush(Light)) g.DrawString(Probe.Label[i], fn, b, x + 16, y);

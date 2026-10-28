@@ -221,7 +221,7 @@ struct ContentView: View {
                 small(m.checking && m.checkSet == -2 ? "Ищем…" : "Найти лучший") { m.runBest() }
             }
             let forThis = m.check != nil && m.checkSet == m.dnsSet
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2), spacing: 6) {
                 ForEach(0..<Probe.host.count, id: \.self) { i in
                     let r: String? = forThis ? m.check![i] : nil
                     HStack(spacing: 6) {
