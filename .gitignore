@@ -2,3 +2,7 @@
 *.pdb
 preview.png
 dist/
+__pycache__/
+*.pyc
+linux/build/
+.build/

@@ -15,7 +15,8 @@ CANDIDATES = [
 ]
 SITES = [("chatgpt.com", "https://chatgpt.com/"), ("claude.ai", "https://claude.ai/"),
          ("gemini.google.com", "https://gemini.google.com/app"), ("elevenlabs.io", "https://elevenlabs.io/"),
-         ("grok.com", "https://grok.com/"), ("www.perplexity.ai", "https://www.perplexity.ai/")]
+         ("grok.com", "https://grok.com/"), ("www.perplexity.ai", "https://www.perplexity.ai/"),
+         ("discord.com", "https://discord.com/"), ("www.youtube.com", "https://www.youtube.com/")]
 BLOCK = ("restrict", "unsupported", "unavailable", "not-available")
 
 

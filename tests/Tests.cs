@@ -168,7 +168,7 @@ namespace HbAi.XboxDns
 
             T("Капча Google не считается открывшимся сайтом", () =>
                 Eq(1, Probe.Best(new[] {
-                    new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok },
+                    new[] { Probe.Ok, Probe.Captcha, Probe.Captcha, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok },
                     Res(5), null, null, null }, -1)));
 
             T("При равенстве остаётся текущий сервис", () =>
@@ -182,6 +182,20 @@ namespace HbAi.XboxDns
 
             T("Непроверенный сервис не выбирается, даже если стоит первым", () =>
                 Eq(1, Probe.Best(new[] { null, Res(0), Res(0) }, -1)));
+
+            T("Discord и YouTube не влияют на выбор: считается только нейросети", () =>
+            {
+                // оба открывают 3 нейросети; первый — ещё Discord и YouTube, но на выбор это не влияет
+                var a = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok };
+                var b = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
+                Eq(0, Probe.Best(new[] { a, b, null, null }, -1), "равные нейросети — остаётся первый:");
+                // 4 нейросети против 3 (не считая Discord/YouTube) — лучший второй, хоть Discord у него и не открыт
+                var d = new[] { Probe.Ok, Probe.Ok, Probe.Ok, Probe.Ok, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink };
+                Eq(1, Probe.Best(new[] { a, d, null, null }, -1), "нейросетей больше у второго:");
+                // Discord и YouTube открыты, нейросети нет — сервис не лучше того, кто открыл хоть одну нейросеть
+                var onlyDy = new[] { Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.NoLink, Probe.Ok, Probe.Ok };
+                Eq(0, Probe.Best(new[] { onlyDy, Res(0), null, null }, -1), "одни Discord и YouTube не делают лучшим:");
+            });
         }
 
         // ---------- какой сервис стоит в Windows ----------
@@ -228,9 +242,9 @@ namespace HbAi.XboxDns
         static void NewVersion()
         {
             T("Номер версии из переадресации GitHub", () =>
-                Eq("1.23", Updates.TagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/v1.23")));
+                Eq("1.23", Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.23")));
             T("Переадресация не на релиз — номера нет", () => Eq(null, Updates.TagOf("https://github.com/login")));
-            T("Тег без «v» — не наш формат, номера нет", () => Eq(null, Updates.TagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/1.23")));
+            T("Тег без «v» — не наш формат, номера нет", () => Eq(null, Updates.TagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/1.23")));
             T("Нет переадресации — номера нет", () => Eq(null, Updates.TagOf(null)));
             T("1.23 новее 1.22", () => Eq(true, Updates.IsNewer("1.23", "1.22")));
             T("1.3 новее 1.22 (номера как десятичные дроби)", () => Eq(true, Updates.IsNewer("1.3", "1.22")));
@@ -243,15 +257,15 @@ namespace HbAi.XboxDns
             {
                 MainForm.ForceScale = 1f;
                 using (var f = new MainForm())
-                using (var plain = new Bitmap(440, 852))
-                using (var upd = new Bitmap(440, 852))
+                using (var plain = new Bitmap(440, 898))
+                using (var upd = new Bitmap(440, 898))
                 {
-                    f.DrawToBitmap(plain, new Rectangle(0, 0, 440, 852));
+                    f.DrawToBitmap(plain, new Rectangle(0, 0, 440, 898));
                     typeof(MainForm).GetField("update", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(f, "1.23");
-                    f.DrawToBitmap(upd, new Rectangle(0, 0, 440, 852));
+                    f.DrawToBitmap(upd, new Rectangle(0, 0, 440, 898));
                     // середина кнопки: была фиолетовой, стала жёлтой
-                    Eq(true, plain.GetPixel(60, 750).B > 200, "до:");
-                    Eq(true, upd.GetPixel(60, 750).R > 200 && upd.GetPixel(60, 750).B < 150, "после:");
+                    Eq(true, plain.GetPixel(60, 796).B > 200, "до:");
+                    Eq(true, upd.GetPixel(60, 796).R > 200 && upd.GetPixel(60, 796).B < 150, "после:");
                 }
             });
         }

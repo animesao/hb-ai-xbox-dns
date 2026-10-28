@@ -1,0 +1,101 @@
+name: build-and-release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-init:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" || \
+          gh release create "${GITHUB_REF_NAME}" --title "HB AI · Smart DNS ${GITHUB_REF_NAME}" --generate-notes
+
+  windows:
+    needs: [release-init]
+    if: always() && !cancelled() && (needs.release-init.result == 'success' || needs.release-init.result == 'skipped')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Windows Tests
+        run: .\test.bat
+      - name: Build Windows Executable
+        run: .\build.bat
+      - name: Checksum
+        shell: pwsh
+        run: Get-FileHash HB_AI_Xbox_DNS.exe -Algorithm SHA256
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HB_AI_Xbox_DNS
+          path: HB_AI_Xbox_DNS.exe
+      - name: Attach Windows to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" HB_AI_Xbox_DNS.exe --clobber
+
+  macos:
+    needs: [release-init]
+    if: always() && !cancelled() && (needs.release-init.result == 'success' || needs.release-init.result == 'skipped')
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run macOS Tests
+        run: set -o pipefail; cd mac && swift test 2>&1 | tail -60
+      - name: Build macOS App
+        run: bash mac/build.sh
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HB_AI_Smart_DNS_mac
+          path: mac/build/HB_AI_Smart_DNS_mac.zip
+      - name: Attach macOS to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" mac/build/HB_AI_Smart_DNS_mac.zip --clobber
+
+  linux:
+    needs: [release-init]
+    if: always() && !cancelled() && (needs.release-init.result == 'success' || needs.release-init.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+      - name: Run Linux Tests
+        run: python3 linux/tests.py
+      - name: Build Linux Package
+        run: bash linux/build.sh
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HB_AI_Smart_DNS_linux
+          path: linux/build/HB_AI_Smart_DNS_linux.tar.gz
+      - name: Attach Linux to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" linux/build/HB_AI_Smart_DNS_linux.tar.gz --clobber

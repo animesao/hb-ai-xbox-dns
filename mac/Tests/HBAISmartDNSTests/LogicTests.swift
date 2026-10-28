@@ -53,7 +53,7 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Probe.classify("000 "), Probe.noLink)
     }
 
-    private func res(_ ok: Int) -> [String] { (0..<6).map { $0 < ok ? Probe.ok : Probe.noLink } }
+    private func res(_ ok: Int) -> [String] { (0..<Probe.host.count).map { $0 < ok ? Probe.ok : Probe.noLink } }
 
     func testBest() {
         XCTAssertEqual(Probe.best([res(5), res(4), res(6), nil], current: -1), 2, "больше сайтов")
@@ -62,6 +62,11 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Probe.best([res(0), res(0), res(0), nil], current: 1), 1, "ничего не открывается — остаётся текущий")
         XCTAssertEqual(Probe.best([res(2), res(4), res(3), nil], current: Services.xboxSet), 1, "текущий Xbox не мешает")
         XCTAssertEqual(Probe.best([nil, res(0), res(0)], current: -1), 1, "непроверенный первым не выбирается")
+        let onlyDy = [Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok]
+        XCTAssertEqual(Probe.best([onlyDy, res(0), nil, nil], current: -1), 0, "одни Discord и YouTube не делают лучшим")
+        let dy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.ok, Probe.ok]
+        let noDy = [Probe.ok, Probe.ok, Probe.ok, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink, Probe.noLink]
+        XCTAssertEqual(Probe.best([dy, noDy, nil, nil], current: -1), 0, "равные нейросети — остаётся первый, Discord не считается")
     }
 
     // ---------- окно после включения ----------
@@ -79,7 +84,7 @@ final class LogicTests: XCTestCase {
     // ---------- новая версия ----------
 
     func testUpdates() {
-        XCTAssertEqual(Updates.tagOf("https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/tag/v1.23"), "1.23")
+        XCTAssertEqual(Updates.tagOf("https://github.com/animesao/hb-ai-xbox-dns/releases/tag/v1.23"), "1.23")
         XCTAssertNil(Updates.tagOf("https://github.com/login"))
         XCTAssertNil(Updates.tagOf(nil))
         XCTAssertTrue(Updates.isNewer("1.23", than: "1.22"))

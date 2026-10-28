@@ -2,7 +2,8 @@ import Foundation
 
 // Сервисы Smart DNS. Список тот же, что в XboxDns.cs (проверено 27.10.2026 из России): Comss.one и MagicDNS
 // открывают ChatGPT, Claude, Gemini, ElevenLabs, Grok, Perplexity; GeoHide Европа — всё, Gemini через раз (капча Google).
-// Astracat убран в 1.22: его DNS не отвечает.
+// Astracat убран в 1.22: его DNS не отвечает. Discord и YouTube сервисы не проксируют — DNS отдаёт их
+// настоящие адреса, сайты идут напрямую от провайдера; проверка их показывает, но на выбор лучшего не влияет.
 enum Services {
     static let name = ["Comss.one", "GeoHide EU", "MagicDNS", "Xbox DNS"]
     static let short = ["Comss", "GeoHide", "MagicDNS", "Xbox"]
@@ -184,8 +185,8 @@ enum Dns {
 // Новая версия: GitHub отвечает на /releases/latest переадресацией на /releases/tag/vX.YY — из неё берём номер.
 // Без API и без ключей, один запрос при запуске; не получилось — молчим.
 final class Updates: NSObject, URLSessionTaskDelegate {
-    static let version = "1.22"
-    static let page = "https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest"
+    static let version = "1.23"
+    static let page = "https://github.com/animesao/hb-ai-xbox-dns/releases/latest"
 
     /// Номер версии из адреса переадресации; nil — адрес не про релиз.
     static func tagOf(_ location: String?) -> String? {

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=HB AI · Smart DNS
+GenericName=Smart DNS Switcher
+Comment=ChatGPT, Claude, Gemini, ElevenLabs, Discord и YouTube одной кнопкой
+Exec=hb-ai-smart-dns %u
+Icon=hb-ai-smart-dns
+Terminal=false
+Categories=Network;Utility;
+Keywords=dns;smartdns;vpn;chatgpt;claude;gemini;discord;youtube;
+StartupNotify=true

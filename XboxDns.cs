@@ -1,4 +1,4 @@
-// HB AI · Smart DNS 1.22 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
+// HB AI · Smart DNS 1.23 — переключатель Smart DNS (Comss.one, GeoHide EU, MagicDNS, xbox-dns.ru) со встроенной проверкой и уведомлением о новой версии.
 // Сборка: build.bat (csc из .NET Framework 4, есть в каждой Windows 10/11). DNS и IPv6 меняются через CIM, без PowerShell.
 using System;
 using System.Diagnostics;
@@ -24,6 +24,8 @@ namespace HbAi.XboxDns
         // кроме Gemini (капча Google). Astracat (135.106.217.200, 85.209.2.112) не отвечает — убран в 1.22.
         // Российские узлы GeoHide (159.194.200.33, 193.233.112.x) отвечают, но их прокси из России не открываются.
         // xbox-dns.ru с 10.10.2026 на нейросети отвечает 0.0.0.0, оставлен только для Xbox Live.
+        // Discord и YouTube сервисы не проксируют (проверено 27.10.2026 из Москвы): DNS отдаёт их настоящие
+        // адреса, и сайты идут напрямую от провайдера. Проверка их показывает, но на выбор «лучшего» не влияет.
         public static readonly string[] Name = { "Comss.one", "GeoHide EU", "MagicDNS", "Xbox DNS" };
         public static readonly string[] Short = { "Comss", "GeoHide", "MagicDNS", "Xbox" };
         public static readonly string[][] V4 = {
@@ -279,8 +281,10 @@ namespace HbAi.XboxDns
     // сайта и смотрим ответ. Так видно, что получит человек, даже если DNS ещё не включён.
     static class Probe
     {
-        public static readonly string[] Host = { "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai" };
-        public static readonly string[] Label = { "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity" };
+        // Discord и YouTube — в конце списка: их сервис не проксирует, Ranked отделяет их от нейросетей
+        public static readonly string[] Host = { "chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai", "discord.com", "www.youtube.com" };
+        public static readonly string[] Label = { "ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity", "Discord", "YouTube" };
+        public const int Ranked = 6;   // столько сайтов в начале — нейросети: по ним «Найти лучший» выбирает сервис
         public const string Ok = "открывается", Blocked = "блок страны", Captcha = "капча Google", NoLink = "нет связи", NoDns = "DNS молчит", Zero = "не пускает";
 
         public static string Resolve(string server, string host)
@@ -427,7 +431,7 @@ namespace HbAi.XboxDns
             return null;
         }
 
-        public static int Good(string[] res) { return res == null ? -1 : res.Count(x => x == Ok); }
+        public static int Good(string[] res) { return res == null ? -1 : res.Take(Ranked).Count(x => x == Ok); }
 
         // сервис, где открылось больше всего сайтов; при равенстве остаётся текущий, чтобы не переключать DNS
         // впустую, а без текущего среди проверенных — тот, что раньше в списке.
@@ -442,7 +446,7 @@ namespace HbAi.XboxDns
 
     class MainForm : Form
     {
-        internal const string Version = "1.22";   // та же версия в app.manifest (1.2.2.0) и в первой строке файла
+        internal const string Version = "1.23";   // та же версия в app.manifest (1.2.3.0) и в первой строке файла
         static readonly Color Bg = Color.FromArgb(7, 7, 11);
         static readonly Color Violet = Color.FromArgb(140, 112, 255);
         static readonly Color Yellow = Color.FromArgb(255, 224, 102);
@@ -470,8 +474,8 @@ namespace HbAi.XboxDns
         string[] check; int checkSet = -1; bool checking; string bestNote;
         // окно тянется, только если кнопку мыши нажали на пустом месте
         Point dragFrom; bool dragging;
-        // Разметка в «логических» пикселях окна 440×852 (как при 100 %), на экран всё умножается на S = DPI / 96.
-        const int LW = 440, LH = 852;
+        // Разметка в «логических» пикселях окна 440×898 (как при 100 %), на экран всё умножается на S = DPI / 96.
+        const int LW = 440, LH = 898;
         float S = 1f;
         internal static float ForceScale;
         readonly System.Windows.Forms.Timer anim = new System.Windows.Forms.Timer();
@@ -708,7 +712,7 @@ namespace HbAi.XboxDns
         // карточка проверки: адреса, кнопки и что открывается через выбранный сервис
         void DrawCheck(Graphics g)
         {
-            var card = new RectangleF(28, 574, LW - 56, 150);
+            var card = new RectangleF(28, 574, LW - 56, 196);
             Panel(g, card, 16, CardBg, CardLine);
             using (var fl = Pt(fBold, 9.5f))
             using (var fv = Pt(fMed, 10f))
@@ -722,14 +726,15 @@ namespace HbAi.XboxDns
             rBest = new Rectangle((int)card.Right - 18 - 160, (int)card.Y + 40, 160, 30);
             DrawSmall(g, rCheck, checking && checkSet == dnsSet ? "Проверяем…" : "Проверить " + Dns.Short[dnsSet], !checking);
             DrawSmall(g, rBest, checking && checkSet == -2 ? "Ищем…" : "Найти лучший", !checking);
-            // результаты по сайтам: две колонки по три строки
+            // результаты по сайтам: три колонки по три строки; Discord и YouTube — третья колонка
             bool forThis = check != null && checkSet == dnsSet;
             using (var fn = Pt(fMed, 9.5f))
             using (var fs = Pt(fBold, 8f))
             {
+                float colW = (card.Width - 36) / 3;
                 for (int i = 0; i < Probe.Host.Length; i++)
                 {
-                    float x = card.X + 18 + (i / 3) * ((card.Width - 36) / 2), y = card.Y + 82 + (i % 3) * 22;
+                    float x = card.X + 18 + (i / 3) * colW, y = card.Y + 82 + (i % 3) * 22;
                     string r = forThis ? check[i] : null;
                     using (var b = new SolidBrush(r == null ? Color.FromArgb(70, 70, 88) : ResultColor(r, BadDot))) g.FillEllipse(b, x, y + 4, 9, 9);
                     using (var b = new SolidBrush(Light)) g.DrawString(Probe.Label[i], fn, b, x + 16, y);
@@ -745,7 +750,7 @@ namespace HbAi.XboxDns
         // кнопка группы ВКонтакте (или «Скачать версию …», если вышла новая) и подвал
         void DrawFooter(Graphics g)
         {
-            rVk = new Rectangle(28, 742, LW - 56, 56);
+            rVk = new Rectangle(28, 788, LW - 56, 56);
             using (var path = RoundPath(rVk, 16))
                 if (update != null)
                     using (var b = new SolidBrush(Yellow)) g.FillPath(b, path);
@@ -757,15 +762,15 @@ namespace HbAi.XboxDns
                 g.DrawString(update != null ? "Скачать версию " + update + "  →" : "Наша группа ВКонтакте  →", f, b, rVk, Center);
             using (var fb = Pt(fHead, 13f))
             using (var bb = new SolidBrush(Violet))
-                g.DrawString("HB AI", fb, bb, 28, 812);
+                g.DrawString("HB AI", fb, bb, 28, 858);
             using (var f = Pt(fMed, 9.5f))
             using (var b = new SolidBrush(Muted))
             {
                 var t = "vk.com/neiroseti_ai";
                 var sz = g.MeasureString(t, f);
-                rGroup = new Rectangle((int)(LW - 28 - sz.Width), 817, (int)sz.Width, (int)sz.Height);
+                rGroup = new Rectangle((int)(LW - 28 - sz.Width), 863, (int)sz.Width, (int)sz.Height);
                 g.DrawString(t, f, b, rGroup.X, rGroup.Y);
-                rBrand = new Rectangle(28, 810, 110, 30);
+                rBrand = new Rectangle(28, 856, 110, 30);
             }
         }
 
@@ -921,7 +926,7 @@ namespace HbAi.XboxDns
                 Ui(() =>
                 {
                     checking = false; check = all[best]; checkSet = best;
-                    string note = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Host.Length + ")";
+                    string note = good == 0 ? "Сейчас ни один сервис не открывает нейросети" : "Лучший сейчас: " + Dns.Name[best] + " (" + good + " из " + Probe.Ranked + ")";
                     // если не открывает ни один — DNS не трогаем; пока идёт включение/выключение — тоже
                     if (good > 0 && !busy && dnsSet == current && best != dnsSet)
                     {
@@ -999,7 +1004,7 @@ namespace HbAi.XboxDns
     // Без API и без ключей, один запрос при запуске; не получилось — молчим.
     static class Updates
     {
-        public const string Page = "https://github.com/neiroseti-ai/hb-ai-xbox-dns/releases/latest";
+        public const string Page = "https://github.com/animesao/hb-ai-xbox-dns/releases/latest";
 
         // номер версии из адреса переадресации; null — адрес не про релиз
         public static string TagOf(string location)

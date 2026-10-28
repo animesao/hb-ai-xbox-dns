@@ -3,8 +3,11 @@ import Foundation
 // Проверка: спрашиваем DNS сервиса напрямую (dig), подключаемся к выданному адресу с именем сайта (curl --resolve)
 // и смотрим ответ. Так видно, что получит человек, даже если DNS ещё не включён. dig и curl есть в каждой macOS.
 enum Probe {
-    static let host = ["chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai"]
-    static let label = ["ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity"]
+    // Discord и YouTube — в конце списка: их сервис не проксирует (проверено 27.10.2026 из Москвы), DNS отдаёт
+    // их настоящие адреса. Ranked отделяет их от нейросетей: «Найти лучший» выбирает сервис по нейросетям.
+    static let host = ["chatgpt.com", "claude.ai", "gemini.google.com", "elevenlabs.io", "grok.com", "www.perplexity.ai", "discord.com", "www.youtube.com"]
+    static let label = ["ChatGPT", "Claude", "Gemini", "ElevenLabs", "Grok", "Perplexity", "Discord", "YouTube"]
+    static let ranked = 6   // столько сайтов в начале — нейросети: по ним выбирается лучший сервис
     static let ok = "открывается", blocked = "блок страны", captcha = "капча Google", noLink = "нет связи", noDns = "DNS молчит", zero = "не пускает"
     static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
 
@@ -63,7 +66,7 @@ enum Probe {
         return res
     }
 
-    static func good(_ r: [String]?) -> Int { r?.filter { $0 == ok }.count ?? -1 }
+    static func good(_ r: [String]?) -> Int { r.map { $0.prefix(ranked).filter { $0 == ok }.count } ?? -1 }
 
     /// Сервис, где открылось больше всего сайтов; при равенстве остаётся текущий, чтобы не переключать DNS впустую,
     /// а без текущего среди проверенных — тот, что раньше в списке. Непроверенный (nil), например Xbox, не выбирается.

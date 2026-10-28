@@ -94,7 +94,7 @@ final class Model: ObservableObject {
             DispatchQueue.main.async {
                 self.checking = false; self.check = all[best]; self.checkSet = best
                 let note = good == 0 ? "Сейчас ни один сервис не открывает нейросети"
-                    : "Лучший сейчас: \(Services.name[best]) (\(good) из \(Probe.host.count))"
+                    : "Лучший сейчас: \(Services.name[best]) (\(good) из \(Probe.ranked))"
                 // ничего не открывается, идёт переключение или человек уже выбрал другой сервис — DNS не трогаем
                 if good > 0 && !self.busy && self.dnsSet == current && best != self.dnsSet {
                     self.dnsSet = best
@@ -221,13 +221,13 @@ struct ContentView: View {
                 small(m.checking && m.checkSet == -2 ? "Ищем…" : "Найти лучший") { m.runBest() }
             }
             let forThis = m.check != nil && m.checkSet == m.dnsSet
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 6) {
-                ForEach(order, id: \.self) { i in
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
+                ForEach(0..<Probe.host.count, id: \.self) { i in
                     let r: String? = forThis ? m.check![i] : nil
                     HStack(spacing: 6) {
                         Circle().fill(dot(r)).frame(width: 9, height: 9)
                         Text(Probe.label[i]).font(Fonts.med(9.5)).foregroundColor(Palette.text).frame(width: 72, alignment: .leading)
-                        if let r = r { Text(r).font(Fonts.bold(8)).foregroundColor(dot(r)) }
+                        if let r = r { Text(r).font(Fonts.bold(8)).foregroundColor(dot(r)).lineLimit(1).minimumScaleFactor(0.7) }
                     }
                 }
             }
@@ -236,9 +236,6 @@ struct ContentView: View {
         .background(RoundedRectangle(cornerRadius: 16).fill(Palette.card))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.line))
     }
-
-    // порядок, при котором сетка 2×3 идёт колонками, как в версии для Windows
-    private var order: [Int] { [0, 3, 1, 4, 2, 5] }
 
     private func dot(_ r: String?) -> Color {
         guard let r = r else { return Color(red: 70 / 255, green: 70 / 255, blue: 88 / 255) }
