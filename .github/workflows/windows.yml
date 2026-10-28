@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Тег релиза (например, v1.23 для публикации релиза)'
+        required: false
+        default: 'v1.23'
 
 permissions:
   contents: write
@@ -29,9 +34,12 @@ jobs:
           name: HB_AI_Xbox_DNS
           path: HB_AI_Xbox_DNS.exe
       - name: Attach Windows to Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "${{ github.ref_name }}" || gh release create "${{ github.ref_name }}" --title "HB AI · Smart DNS ${{ github.ref_name }}" --generate-notes
-          gh release upload "${{ github.ref_name }}" HB_AI_Xbox_DNS.exe --clobber
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.ref_name }}"; fi
+          gh release view "$TAG" || gh release create "$TAG" --title "HB AI · Smart DNS $TAG" --generate-notes
+          gh release upload "$TAG" HB_AI_Xbox_DNS.exe --clobber
