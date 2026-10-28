@@ -26,6 +26,35 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 
 Не скачивается по кнопке? Прямые ссылки: [для Windows](https://github.com/animesao/hb-ai-xbox-dns/releases/latest/download/HB_AI_Xbox_DNS.exe) · 230 КБ · Windows 10/11, [для Mac](https://github.com/animesao/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip) · 870 КБ · macOS 13+, [для Linux](https://github.com/animesao/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_linux.tar.gz) · Linux (любой дистрибутив). Бесплатно, открытый код.
 
+## ⚡ Быстрая установка одной командой
+
+### 🍏 Для macOS (MacBook / Mac)
+Откройте **Терминал** и выполните одну команду:
+```bash
+curl -sSL https://raw.githubusercontent.com/animesao/hb-ai-xbox-dns/main/install-mac.sh | bash
+```
+> **Что делает скрипт:**
+> 1. Автоматически скачивает исходный код во временный каталог `/tmp`.
+> 2. Компилирует нативное приложение под архитектуру вашего Mac (Apple Silicon M1/M2/M3/M4 или Intel).
+> 3. Устанавливает готовое `HB AI Smart DNS.app` в системную папку «Программы» (`/Applications`).
+> 4. Снимает системный карантин macOS Gatekeeper (`com.apple.quarantine`) и подписывает ad-hoc — приложение открывается без предупреждений о непроверенном разработчике.
+> 5. **Полностью удаляет весь временный сборочный хлам, кэш и исходники.**
+> 6. Сразу запускает приложение!
+
+### 🐧 Для Linux (Ubuntu, Debian, Fedora, Arch и др.)
+Откройте терминал и выполните:
+```bash
+curl -sSL https://raw.githubusercontent.com/animesao/hb-ai-xbox-dns/main/install-linux.sh | bash
+```
+> Скрипт установит программу в `~/.local/bin/hb-ai-smart-dns` (или `/opt/` и `/usr/local/bin` при запуске с `sudo`), создаст ярлык с иконкой в меню приложений и удалит временные файлы.
+
+### 🪟 Для Windows 10 / 11
+Откройте **PowerShell** и выполните:
+```powershell
+irm https://raw.githubusercontent.com/animesao/hb-ai-xbox-dns/main/install-windows.ps1 | iex
+```
+> Либо скачайте и запустите `install-windows.bat`. Скрипт установит программу в `%LOCALAPPDATA%\Programs\HB AI Smart DNS`, создаст ярлыки на Рабочем столе и в меню «Пуск» и запустит программу.
+
 <img src="docs/screenshot.png" width="360" alt="Окно программы HB AI Smart DNS: кнопка включения, выбор сервиса Comss.one, GeoHide, GeoHide EU, Xbox">
 
 Не нужно искать адреса DNS и вручную менять настройки сетевого адаптера.
@@ -65,9 +94,15 @@ Gemini, ElevenLabs или ChatGPT пишут «недоступно в ваше�
 certutil -hashfile HB_AI_Xbox_DNS.exe SHA256
 ```
 
-## Для Mac
+## Для Mac (MacBook)
 
-Есть версия для macOS 13 и новее с теми же сервисами, той же проверкой и тем же уведомлением о новой версии. Скачайте [HB_AI_Smart_DNS_mac.zip](https://github.com/animesao/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip), распакуйте и перетащите «HB AI Smart DNS» в «Программы».
+Самый быстрый и удобный способ — автосборка и установка одной командой в Терминале:
+```bash
+curl -sSL https://raw.githubusercontent.com/animesao/hb-ai-xbox-dns/main/install-mac.sh | bash
+```
+Скрипт автоматически скачает код, скомпилирует приложение под ваш Mac (Apple Silicon или Intel), установит в `/Applications/HB AI Smart DNS.app`, снимет карантин и очистит весь сборочный хлам.
+
+Либо можно скачать готовый архив [HB_AI_Smart_DNS_mac.zip](https://github.com/animesao/hb-ai-xbox-dns/releases/latest/download/HB_AI_Smart_DNS_mac.zip), распаковать и перетащить «HB AI Smart DNS» в «Программы».
 
 1. При первом запуске macOS скажет, что разработчик не проверен: нажмите на программу правой кнопкой → **Открыть** → **Открыть**. Это нужно один раз. Если кнопки «Открыть» нет, снимите карантин в Терминале: `xattr -d com.apple.quarantine "/Applications/HB AI Smart DNS.app"`.
 2. При включении DNS macOS попросит пароль администратора: DNS меняется стандартной командой `networksetup -setdnsservers`, а выключение возвращает автоматический DNS (`empty`). Если провайдер даёт IPv6, в той же команде IPv6 выключается (`networksetup -setv6off`) и при выключении возвращается в «Автоматически» (`-setv6automatic`); список таких подключений — в `~/Library/Application Support/HB AI Smart DNS/ipv6-off.txt`.
