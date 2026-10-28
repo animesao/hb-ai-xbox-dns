@@ -35,6 +35,7 @@ namespace HbAi.XboxDns
             WindowDrag();
             Switching();
             AfterSwitch();
+            DpiBypass();
 
             int failed = 0;
             foreach (var t in all)
@@ -506,6 +507,52 @@ namespace HbAi.XboxDns
                 Eq("v6on Wi-Fi", net.Take());
                 Restore(net, f);
                 Eq("", net.Take());
+            });
+        }
+
+        static void DpiBypass()
+        {
+            T("PAC-скрипт содержит правила для YouTube и Discord", () =>
+            {
+                string pac = DpiService.PacScript(2080);
+                Eq(true, pac.Contains("FindProxyForURL"));
+                Eq(true, pac.Contains("discord.com"));
+                Eq(true, pac.Contains("youtube.com"));
+                Eq(true, pac.Contains("googlevideo.com"));
+                Eq(true, pac.Contains("PROXY 127.0.0.1:2080"));
+                Eq(true, pac.Contains("DIRECT"));
+            });
+
+            T("SplitStream делит Client Hello на два фрагмента", () =>
+            {
+                var mem = new MemoryStream();
+                var split = new SplitStream(mem, new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp));
+                byte[] clientHello = new byte[32];
+                clientHello[0] = 0x16; clientHello[1] = 0x03; clientHello[2] = 0x01;
+                for (int i = 3; i < 32; i++) clientHello[i] = (byte)i;
+                split.Write(clientHello, 0, clientHello.Length);
+                Eq(32, (int)mem.Length, "длина записанного:");
+            });
+
+            T("Локальный прокси отдаёт PAC-файл по HTTP", () =>
+            {
+                DpiService.Start();
+                try
+                {
+                    var rq = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + DpiService.Port + "/proxy.pac");
+                    rq.Timeout = 3000;
+                    using (var rs = rq.GetResponse())
+                    using (var sr = new StreamReader(rs.GetResponseStream()))
+                    {
+                        string body = sr.ReadToEnd();
+                        Eq(true, body.Contains("FindProxyForURL"));
+                        Eq(true, body.Contains("PROXY 127.0.0.1:" + DpiService.Port));
+                    }
+                }
+                finally
+                {
+                    DpiService.Stop();
+                }
             });
         }
     }

@@ -10,8 +10,9 @@ import os
 import struct
 import tempfile
 import unittest
+import urllib.request
 
-from hb_ai_smart_dns import LinuxNet, Probe, Services, Updates, VERSION
+from hb_ai_smart_dns import DpiService, LinuxNet, Probe, Services, Updates, VERSION
 
 
 class TestServices(unittest.TestCase):
@@ -204,6 +205,31 @@ class TestIpv6Persistence(unittest.TestCase):
             LinuxNet.get_ipv6_off_file = orig_fn
             if os.path.exists(path):
                 os.remove(path)
+
+
+
+class TestDpiBypass(unittest.TestCase):
+    def test_pac_script(self):
+        pac = DpiService.pac_script(2080)
+        self.assertIn("FindProxyForURL", pac)
+        self.assertIn("discord.com", pac)
+        self.assertIn("youtube.com", pac)
+        self.assertIn("googlevideo.com", pac)
+        self.assertIn("PROXY 127.0.0.1:2080", pac)
+        self.assertIn("DIRECT", pac)
+
+    def test_proxy_service_http_pac(self):
+        started = DpiService.start()
+        self.assertTrue(started)
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{DpiService.port}/proxy.pac")
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = resp.read().decode("utf-8")
+                self.assertIn("FindProxyForURL", data)
+                self.assertIn(f"PROXY 127.0.0.1:{DpiService.port}", data)
+        finally:
+            DpiService.stop()
+            self.assertFalse(DpiService.is_running())
 
 
 if __name__ == "__main__":

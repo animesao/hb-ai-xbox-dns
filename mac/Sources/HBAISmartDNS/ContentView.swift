@@ -18,6 +18,7 @@ final class Model: ObservableObject {
         active = cur != nil
         dnsSet = cur ?? 0
         stale = !active && Dns.staleActive()
+        if active { _ = DpiService.shared.start() }
         Updates.check { v in DispatchQueue.main.async { self.update = v } }
     }
 
@@ -184,7 +185,7 @@ struct ContentView: View {
         VStack(spacing: 6) {
             Text(m.busy ? "Применяем настройки…" : m.active ? "DNS включён" : m.stale ? "Стоят старые адреса DNS" : "DNS выключен")
                 .font(Fonts.head(15)).foregroundColor(m.active && !m.busy ? Palette.yellow : .white)
-            Text(m.error ?? m.bestNote ?? (m.busy ? "Секунду" : m.active ? Services.name[m.dnsSet] + ": " + Services.opens[m.dnsSet]
+            Text(m.error ?? m.bestNote ?? (m.busy ? "Секунду" : m.active ? Services.name[m.dnsSet] + ": " + Services.opens[m.dnsSet] + " + YouTube, Discord"
                  : m.stale ? "Через них нейросети не откроются. Нажмите кнопку — поставим рабочие" : "Обычный DNS от роутера или провайдера"))
                 .font(Fonts.med(10.5)).foregroundColor(m.error != nil ? Color(red: 1, green: 138 / 255, blue: 138 / 255) : Palette.muted)
                 .multilineTextAlignment(.center).frame(maxWidth: 380)

@@ -271,7 +271,70 @@ class Probe:
     @classmethod
     def site(cls, host: str, ip: str) -> str:
         """Проверка доступности сайта по TLS через выданный IP-адрес."""
-        # 1. Попытка через curl (если есть в системе — самый надёжный способ для HTTP/2+TLS)
+        is_dpi_target = "discord" in host.lower() or "youtube" in host.lower()
+        if is_dpi_target:
+            # Для Discord и YouTube применяем механизм обхода блокировок DPI (фрагментация TLS Client Hello на 8 байт)
+            try:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                incoming = ssl.MemoryBIO()
+                outgoing = ssl.MemoryBIO()
+                ss = ctx.wrap_bio(incoming, outgoing, server_hostname=host)
+                try:
+                    ss.do_handshake()
+                except ssl.SSLWantReadError:
+                    pass
+                client_hello = outgoing.read()
+
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.settimeout(6.0)
+                sock.connect((ip, 443))
+
+                # Split at 8 bytes
+                sock.sendall(client_hello[:8])
+                time.sleep(0.003)
+                sock.sendall(client_hello[8:])
+
+                while True:
+                    try:
+                        ss.do_handshake()
+                        break
+                    except ssl.SSLWantReadError:
+                        data = sock.recv(4096)
+                        if not data:
+                            raise Exception("Connection closed")
+                        incoming.write(data)
+                    except ssl.SSLWantWriteError:
+                        sock.sendall(outgoing.read())
+
+                req = (
+                    f"GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {cls.UA}\r\n"
+                    "Accept: text/html\r\nConnection: close\r\n\r\n"
+                ).encode("ascii")
+                ss.write(req)
+                sock.sendall(outgoing.read())
+
+                resp = bytearray()
+                while len(resp) < 16384:
+                    try:
+                        chunk = ss.read(4096)
+                        if chunk:
+                            resp.extend(chunk)
+                            if b"\r\n\r\n" in resp:
+                                break
+                    except ssl.SSLWantReadError:
+                        data = sock.recv(4096)
+                        if not data:
+                            break
+                        incoming.write(data)
+                sock.close()
+                return cls.classify(resp.decode("latin1", errors="ignore"))
+            except Exception:
+                return cls.NO_LINK
+
+        # Обычные сайты (нейросети): попытка curl, затем сокеты
         try:
             res = subprocess.run(
                 [
@@ -290,7 +353,6 @@ class Probe:
         except Exception:
             pass
 
-        # 2. Фолбэк на сокеты Python с SNI
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -370,12 +432,237 @@ class Probe:
 # УПРАВЛЕНИЕ СЕТЬЮ В LINUX
 # ============================================================================
 
+# ============================================================================
+# ОБХОД БЛОКИРОВОК DPI (Zapret / GoodbyeDPI)
+# ============================================================================
+
+class DpiService:
+    """Локальный сервис обхода DPI (GoodbyeDPI / Zapret):
+    Поднимает HTTP CONNECT + SOCKS5 прокси на 127.0.0.1:2080 и раздаёт PAC-скрипт.
+    Фрагментирует пакеты Client Hello для YouTube и Discord.
+    """
+    DEFAULT_PORT = 2080
+    port = DEFAULT_PORT
+    _server_sock: Optional[socket.socket] = None
+    _running = False
+    _thread: Optional[threading.Thread] = None
+
+    BYPASS_DOMAINS = [
+        "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
+        "discord.media", "discordcdn.com", "dis.gd", "discord.co",
+        "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
+        "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com",
+    ]
+
+    @classmethod
+    def pac_script(cls, p: int) -> str:
+        domains_js = json.dumps(cls.BYPASS_DOMAINS)
+        return (
+            "function FindProxyForURL(url, host) {\n"
+            f"  var d = {domains_js};\n"
+            "  for (var i = 0; i < d.length; i++) {\n"
+            "    if (host === d[i] || dnsDomainIs(host, '.' + d[i])) {\n"
+            f"      return 'PROXY 127.0.0.1:{p}; SOCKS5 127.0.0.1:{p}; DIRECT';\n"
+            "    }\n"
+            "  }\n"
+            "  return 'DIRECT';\n"
+            "}\n"
+        )
+
+    @classmethod
+    def enable_system_proxy(cls, pac_url: str) -> None:
+        """Настройка автопрокси (PAC) для рабочего окружения GNOME/KDE."""
+        try:
+            subprocess.run(["gsettings", "set", "org.gnome.system.proxy", "mode", "auto"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            subprocess.run(["gsettings", "set", "org.gnome.system.proxy", "autoconfig-url", pac_url],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            pass
+
+    @classmethod
+    def disable_system_proxy(cls) -> None:
+        """Сброс настроек автопрокси в системе."""
+        try:
+            subprocess.run(["gsettings", "set", "org.gnome.system.proxy", "mode", "none"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            subprocess.run(["gsettings", "reset", "org.gnome.system.proxy", "autoconfig-url"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            pass
+
+    @classmethod
+    def is_running(cls) -> bool:
+        return cls._running
+
+    @classmethod
+    def start(cls) -> bool:
+        if cls._running:
+            return True
+        for p in range(cls.DEFAULT_PORT, cls.DEFAULT_PORT + 10):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("127.0.0.1", p))
+                s.listen(50)
+                cls._server_sock = s
+                cls.port = p
+                cls._running = True
+                cls._thread = threading.Thread(target=cls._serve, daemon=True)
+                cls._thread.start()
+                cls.enable_system_proxy(f"http://127.0.0.1:{p}/proxy.pac")
+                return True
+            except Exception:
+                continue
+        return False
+
+    @classmethod
+    def stop(cls) -> None:
+        cls._running = False
+        cls.disable_system_proxy()
+        if cls._server_sock:
+            try:
+                cls._server_sock.close()
+            except Exception:
+                pass
+            cls._server_sock = None
+
+    @classmethod
+    def _serve(cls) -> None:
+        while cls._running and cls._server_sock:
+            try:
+                cs, _ = cls._server_sock.accept()
+                threading.Thread(target=cls._handle_client, args=(cs,), daemon=True).start()
+            except Exception:
+                break
+
+    @classmethod
+    def _handle_client(cls, client: socket.socket) -> None:
+        try:
+            client.settimeout(6.0)
+            buf = client.recv(4096)
+            if not buf:
+                client.close()
+                return
+
+            # 1. PAC Request
+            if buf.startswith(b"GET ") and (b"/proxy.pac" in buf or b"/pac" in buf or (b"HTTP/" in buf and buf.split(b" ")[1] == b"/")):
+                pac = cls.pac_script(cls.port).encode("utf-8")
+                resp = (
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/x-ns-proxy-autoconfig\r\n"
+                    b"Connection: close\r\n\r\n" + pac
+                )
+                client.sendall(resp)
+                client.close()
+                return
+
+            # 2. HTTP CONNECT
+            if buf.startswith(b"CONNECT "):
+                parts = buf.split(b" ")
+                if len(parts) > 1:
+                    target = parts[1].decode("ascii", errors="ignore").split(":")
+                    host = target[0]
+                    port = int(target[1]) if len(target) > 1 else 443
+
+                    upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    upstream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    upstream.settimeout(8.0)
+                    upstream.connect((host, port))
+
+                    client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+
+                    payload = client.recv(16384)
+                    if payload:
+                        if len(payload) > 12 and payload[0] == 0x16 and payload[1] == 0x03:
+                            upstream.sendall(payload[:8])
+                            time.sleep(0.003)
+                            upstream.sendall(payload[8:])
+                        else:
+                            upstream.sendall(payload)
+
+                    cls._pipe(client, upstream)
+                    return
+
+            # 3. SOCKS5
+            if buf[0] == 0x05:
+                client.sendall(b"\x05\x00")
+                nreq = client.recv(4096)
+                if len(nreq) > 6 and nreq[0] == 0x05 and nreq[1] == 0x01:
+                    atyp = nreq[3]
+                    host = None
+                    port = 0
+                    if atyp == 0x01 and len(nreq) >= 10:
+                        host = socket.inet_ntoa(nreq[4:8])
+                        port = struct.unpack(">H", nreq[8:10])[0]
+                    elif atyp == 0x03 and len(nreq) >= 7:
+                        dlen = nreq[4]
+                        if len(nreq) >= 5 + dlen + 2:
+                            host = nreq[5:5 + dlen].decode("ascii", errors="ignore")
+                            port = struct.unpack(">H", nreq[5 + dlen:5 + dlen + 2])[0]
+                    if host and port:
+                        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        upstream.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                        upstream.settimeout(8.0)
+                        upstream.connect((host, port))
+                        client.sendall(b"\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
+
+                        payload = client.recv(16384)
+                        if payload:
+                            if len(payload) > 12 and payload[0] == 0x16 and payload[1] == 0x03:
+                                upstream.sendall(payload[:8])
+                                time.sleep(0.003)
+                                upstream.sendall(payload[8:])
+                            else:
+                                upstream.sendall(payload)
+
+                        cls._pipe(client, upstream)
+                        return
+
+            client.close()
+        except Exception:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    @classmethod
+    def _pipe(cls, s1: socket.socket, s2: socket.socket) -> None:
+        def fwd(src, dst):
+            try:
+                while True:
+                    d = src.recv(32768)
+                    if not d:
+                        break
+                    dst.sendall(d)
+            except Exception:
+                pass
+            finally:
+                try: dst.shutdown(socket.SHUT_WR)
+                except Exception: pass
+                try: src.close()
+                except Exception: pass
+                try: dst.close()
+                except Exception: pass
+
+        t1 = threading.Thread(target=fwd, args=(s1, s2), daemon=True)
+        t2 = threading.Thread(target=fwd, args=(s2, s1), daemon=True)
+        t1.start()
+        t2.start()
+
 class LinuxNet:
     """Управление DNS и IPv6 на Linux."""
 
     CONF_BACKUP = "/var/lib/hb-ai-smart-dns/resolv.conf.backup"
     IPV6_OFF_FILE = "/var/lib/hb-ai-smart-dns/ipv6-off.txt"
     USER_IPV6_OFF_FILE = os.path.expanduser("~/.local/share/hb-ai-smart-dns/ipv6-off.txt")
+
+    @classmethod
+    def enable_proxy(cls, pac_url: str) -> None:
+        DpiService.enable_system_proxy(pac_url)
+
+    @classmethod
+    def disable_proxy(cls) -> None:
+        DpiService.disable_system_proxy()
 
     @classmethod
     def get_ipv6_off_file(cls) -> str:

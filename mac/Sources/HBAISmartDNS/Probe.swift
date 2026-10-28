@@ -33,8 +33,14 @@ enum Probe {
     }
 
     static func site(_ host: String, _ ip: String) -> String {
-        let r = Shell.run("/usr/bin/curl", ["-s", "-o", "/dev/null", "-m", "10", "--noproxy", "*", "-A", ua,
-                                             "--resolve", "\(host):443:\(ip)", "-w", "%{http_code} %{redirect_url}", "https://\(host)/"], timeout: 15)
+        let isDpi = host.contains("discord") || host.contains("youtube")
+        var args = ["-s", "-o", "/dev/null", "-m", "10", "-A", ua]
+        if isDpi && DpiService.shared.isRunning {
+            args += ["-x", "http://127.0.0.1:\(DpiService.shared.port)", "https://\(host)/", "-w", "%{http_code} %{redirect_url}"]
+        } else {
+            args += ["--noproxy", "*", "--resolve", "\(host):443:\(ip)", "-w", "%{http_code} %{redirect_url}", "https://\(host)/"]
+        }
+        let r = Shell.run("/usr/bin/curl", args, timeout: 15)
         return classify(r.out)
     }
 

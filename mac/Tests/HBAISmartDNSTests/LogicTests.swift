@@ -153,4 +153,14 @@ final class LogicTests: XCTestCase {
     func testQuote() {
         XCTAssertEqual(Dns.quote("Wi-Fi \"дом\""), "\"Wi-Fi \\\"дом\\\"\"")
     }
+
+    func testDpiPacScript() {
+        let pac = DpiService.pacScript(port: 2080)
+        XCTAssertTrue(pac.contains("FindProxyForURL"))
+        XCTAssertTrue(pac.contains("discord.com"))
+        XCTAssertTrue(pac.contains("youtube.com"))
+        XCTAssertTrue(pac.contains("googlevideo.com"))
+        XCTAssertTrue(pac.contains("PROXY 127.0.0.1:2080"))
+        XCTAssertTrue(pac.contains("DIRECT"))
+    }
 }

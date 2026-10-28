@@ -90,8 +90,17 @@ namespace HbAi.XboxDns
         }
 
         // Включить сервис, выключить DNS сервиса, вернуть IPv6. Возвращают текст ошибок или null.
-        public static string Enable(int set) { return Enable(set, Net, Off6File); }
-        public static string Disable() { return Disable(Net, Off6File); }
+        public static string Enable(int set)
+        {
+            var err = Enable(set, Net, Off6File);
+            DpiService.Start();
+            return err;
+        }
+        public static string Disable()
+        {
+            DpiService.Stop();
+            return Disable(Net, Off6File);
+        }
         public static string RestoreIpv6() { return File.Exists(Off6File) ? Restore6(Net, Off6File, new Errors()) : null; }
 
         internal static INet Net = new CimNet();
@@ -377,7 +386,13 @@ namespace HbAi.XboxDns
                     if (!ar.AsyncWaitHandle.WaitOne(6000) || !tcp.Connected) return NoLink;
                     tcp.EndConnect(ar);
                     tcp.ReceiveTimeout = 8000; tcp.SendTimeout = 8000;
-                    using (var ssl = new System.Net.Security.SslStream(tcp.GetStream(), false, (s, c, ch, e) => true))
+                    Stream netStream = tcp.GetStream();
+                    if (host.IndexOf("discord", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        host.IndexOf("youtube", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        netStream = new SplitStream(netStream, tcp.Client);
+                    }
+                    using (var ssl = new System.Net.Security.SslStream(netStream, false, (s, c, ch, e) => true))
                     {
                         ssl.AuthenticateAsClient(host, null, (System.Security.Authentication.SslProtocols)(3072 | 12288), false);
                         var req = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: " + host +
@@ -444,6 +459,315 @@ namespace HbAi.XboxDns
         }
     }
 
+    // Механизм десинхронизации и фрагментации пакетов TLS (как в GoodbyeDPI и Zapret)
+    // Разделяет TLS Client Hello на два TCP-сегмента, благодаря чему ТСПУ провайдера
+    // не может прочитать SNI (discord.com, googlevideo.com) и пропускает трафик.
+    sealed class SplitStream : Stream
+    {
+        readonly Stream inner;
+        readonly System.Net.Sockets.Socket socket;
+        bool done;
+        public SplitStream(Stream s, System.Net.Sockets.Socket sock) { inner = s; socket = sock; }
+        public override bool CanRead { get { return inner.CanRead; } }
+        public override bool CanSeek { get { return inner.CanSeek; } }
+        public override bool CanWrite { get { return inner.CanWrite; } }
+        public override long Length { get { return inner.Length; } }
+        public override long Position { get { return inner.Position; } set { inner.Position = value; } }
+        public override void Flush() { inner.Flush(); }
+        public override int Read(byte[] b, int o, int c) { return inner.Read(b, o, c); }
+        public override long Seek(long o, SeekOrigin origin) { return inner.Seek(o, origin); }
+        public override void SetLength(long v) { inner.SetLength(v); }
+        public override void Write(byte[] b, int o, int c)
+        {
+            if (!done && c > 12 && b[o] == 0x16 && b[o + 1] == 0x03)
+            {
+                done = true;
+                try { socket.NoDelay = true; } catch { }
+                inner.Write(b, o, 8);
+                inner.Flush();
+                Thread.Sleep(2);
+                inner.Write(b, o + 8, c - 8);
+                inner.Flush();
+                return;
+            }
+            inner.Write(b, o, c);
+        }
+    }
+
+    // Локальный сервис обхода блокировок DPI (Zapret / GoodbyeDPI):
+    // Поднимает локальный HTTP CONNECT + SOCKS5 прокси на 127.0.0.1:2080 и раздаёт PAC-скрипт.
+    // Фрагментирует Client Hello для YouTube и Discord, весь остальной трафик идёт DIRECT без задержек.
+    static class DpiService
+    {
+        public const int DefaultPort = 2080;
+        public static int Port = DefaultPort;
+        static System.Net.Sockets.TcpListener listener;
+        static volatile bool running;
+
+        public static bool IsRunning { get { return running; } }
+
+        public static readonly string[] BypassDomains = {
+            "discord.com", "discord.gg", "discordapp.com", "discordapp.net",
+            "discord.media", "discordcdn.com", "dis.gd", "discord.co",
+            "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
+            "ggpht.com", "youtube-nocookie.com", "yt.be", "gvt1.com"
+        };
+
+        public static string PacScript(int p)
+        {
+            var sb = new StringBuilder();
+            sb.Append("function FindProxyForURL(url, host) {\r\n");
+            sb.Append("  var d = [");
+            for (int i = 0; i < BypassDomains.Length; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append("\"").Append(BypassDomains[i]).Append("\"");
+            }
+            sb.Append("];\r\n");
+            sb.Append("  for (var i = 0; i < d.length; i++) {\r\n");
+            sb.Append("    if (host === d[i] || dnsDomainIs(host, \".\" + d[i])) {\r\n");
+            sb.Append("      return \"PROXY 127.0.0.1:").Append(p).Append("; SOCKS5 127.0.0.1:").Append(p).Append("; DIRECT\";\r\n");
+            sb.Append("    }\r\n");
+            sb.Append("  }\r\n");
+            sb.Append("  return \"DIRECT\";\r\n");
+            sb.Append("}\r\n");
+            return sb.ToString();
+        }
+
+        public static void Start()
+        {
+            if (running) return;
+            for (int p = DefaultPort; p <= DefaultPort + 10; p++)
+            {
+                try
+                {
+                    var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, p);
+                    l.Start();
+                    listener = l;
+                    Port = p;
+                    running = true;
+                    listener.BeginAcceptSocket(OnAccept, null);
+                    WinProxy.SetPac("http://127.0.0.1:" + Port + "/proxy.pac");
+                    break;
+                }
+                catch { }
+            }
+        }
+
+        public static void Stop()
+        {
+            running = false;
+            WinProxy.ClearPac();
+            if (listener != null)
+            {
+                try { listener.Stop(); } catch { }
+                listener = null;
+            }
+        }
+
+        static void OnAccept(IAsyncResult ar)
+        {
+            if (!running || listener == null) return;
+            System.Net.Sockets.Socket client = null;
+            try
+            {
+                client = listener.EndAcceptSocket(ar);
+                listener.BeginAcceptSocket(OnAccept, null);
+            }
+            catch { return; }
+
+            ThreadPool.QueueUserWorkItem(_ => Handle(client));
+        }
+
+        static void Handle(System.Net.Sockets.Socket client)
+        {
+            try
+            {
+                client.ReceiveTimeout = 6000;
+                byte[] buf = new byte[4096];
+                int n = client.Receive(buf);
+                if (n <= 0) { client.Close(); return; }
+
+                // 1. PAC Request
+                if (n >= 4 && buf[0] == 'G' && buf[1] == 'E' && buf[2] == 'T')
+                {
+                    byte[] pac = Encoding.ASCII.GetBytes(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n" +
+                        PacScript(Port));
+                    client.Send(pac);
+                    client.Close();
+                    return;
+                }
+
+                // 2. HTTP CONNECT
+                if (n >= 8 && buf[0] == 'C' && buf[1] == 'O' && buf[2] == 'N' && buf[3] == 'N')
+                {
+                    string header = Encoding.ASCII.GetString(buf, 0, n);
+                    int sp1 = header.IndexOf(' '), sp2 = header.IndexOf(' ', sp1 + 1);
+                    if (sp1 > 0 && sp2 > sp1)
+                    {
+                        string target = header.Substring(sp1 + 1, sp2 - sp1 - 1);
+                        string[] parts = target.Split(':');
+                        string host = parts[0];
+                        int port = parts.Length > 1 ? int.Parse(parts[1]) : 443;
+
+                        var upstream = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork,
+                            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+                        upstream.NoDelay = true;
+                        upstream.Connect(host, port);
+
+                        byte[] ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n");
+                        client.Send(ok);
+
+                        int got = client.Receive(buf);
+                        if (got > 0)
+                        {
+                            if (got > 12 && buf[0] == 0x16 && buf[1] == 0x03)
+                            {
+                                upstream.Send(buf, 0, 8, System.Net.Sockets.SocketFlags.None);
+                                Thread.Sleep(2);
+                                upstream.Send(buf, 8, got - 8, System.Net.Sockets.SocketFlags.None);
+                            }
+                            else
+                            {
+                                upstream.Send(buf, 0, got, System.Net.Sockets.SocketFlags.None);
+                            }
+                        }
+
+                        Pipe(client, upstream);
+                        return;
+                    }
+                }
+
+                // 3. SOCKS5
+                if (buf[0] == 0x05)
+                {
+                    client.Send(new byte[] { 0x05, 0x00 });
+                    int nreq = client.Receive(buf);
+                    if (nreq > 6 && buf[0] == 0x05 && buf[1] == 0x01)
+                    {
+                        string host = null;
+                        int port = 0;
+                        int atyp = buf[3];
+                        if (atyp == 0x01 && nreq >= 10)
+                        {
+                            host = buf[4] + "." + buf[5] + "." + buf[6] + "." + buf[7];
+                            port = (buf[8] << 8) | buf[9];
+                        }
+                        else if (atyp == 0x03 && nreq >= 7)
+                        {
+                            int dlen = buf[4];
+                            if (nreq >= 5 + dlen + 2)
+                            {
+                                host = Encoding.ASCII.GetString(buf, 5, dlen);
+                                port = (buf[5 + dlen] << 8) | buf[6 + dlen];
+                            }
+                        }
+                        if (host != null && port > 0)
+                        {
+                            var upstream = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork,
+                                System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+                            upstream.NoDelay = true;
+                            upstream.Connect(host, port);
+                            client.Send(new byte[] { 0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+                            int got = client.Receive(buf);
+                            if (got > 0)
+                            {
+                                if (got > 12 && buf[0] == 0x16 && buf[1] == 0x03)
+                                {
+                                    upstream.Send(buf, 0, 8, System.Net.Sockets.SocketFlags.None);
+                                    Thread.Sleep(2);
+                                    upstream.Send(buf, 8, got - 8, System.Net.Sockets.SocketFlags.None);
+                                }
+                                else
+                                {
+                                    upstream.Send(buf, 0, got, System.Net.Sockets.SocketFlags.None);
+                                }
+                            }
+                            Pipe(client, upstream);
+                            return;
+                        }
+                    }
+                }
+
+                client.Close();
+            }
+            catch { try { client.Close(); } catch { } }
+        }
+
+        static void Pipe(System.Net.Sockets.Socket s1, System.Net.Sockets.Socket s2)
+        {
+            ThreadPool.QueueUserWorkItem(_ => Forward(s1, s2));
+            ThreadPool.QueueUserWorkItem(_ => Forward(s2, s1));
+        }
+
+        static void Forward(System.Net.Sockets.Socket from, System.Net.Sockets.Socket to)
+        {
+            byte[] b = new byte[16384];
+            try
+            {
+                while (true)
+                {
+                    int n = from.Receive(b);
+                    if (n <= 0) break;
+                    to.Send(b, 0, n, System.Net.Sockets.SocketFlags.None);
+                }
+            }
+            catch { }
+            finally
+            {
+                try { to.Shutdown(System.Net.Sockets.SocketShutdown.Both); } catch { }
+                try { to.Close(); } catch { }
+                try { from.Close(); } catch { }
+            }
+        }
+    }
+
+    static class WinProxy
+    {
+        [DllImport("wininet.dll", SetLastError = true)]
+        static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+        const int INTERNET_OPTION_SETTINGS_CHANGED = 39;
+        const int INTERNET_OPTION_REFRESH = 37;
+        const string KeyPath = @"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+
+        public static void SetPac(string pacUrl)
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(KeyPath, true))
+                {
+                    if (k != null) k.SetValue("AutoConfigURL", pacUrl, Microsoft.Win32.RegistryValueKind.String);
+                }
+                Notify();
+            }
+            catch { }
+        }
+
+        public static void ClearPac()
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(KeyPath, true))
+                {
+                    if (k != null && k.GetValue("AutoConfigURL") != null) k.DeleteValue("AutoConfigURL", false);
+                }
+                Notify();
+            }
+            catch { }
+        }
+
+        static void Notify()
+        {
+            try
+            {
+                InternetSetOption(IntPtr.Zero, INTERNET_OPTION_SETTINGS_CHANGED, IntPtr.Zero, 0);
+                InternetSetOption(IntPtr.Zero, INTERNET_OPTION_REFRESH, IntPtr.Zero, 0);
+            }
+            catch { }
+        }
+    }
+
     class MainForm : Form
     {
         internal const string Version = "1.23";   // та же версия в app.manifest (1.2.3.0) и в первой строке файла
@@ -504,6 +828,7 @@ namespace HbAi.XboxDns
             dnsSet = cur >= 0 ? cur : 0;
             stale = !active && Dns.StaleActive();
             if (!active && ForceScale <= 0) ThreadPool.QueueUserWorkItem(_ => Dns.RestoreIpv6());
+            if (active && ForceScale <= 0) ThreadPool.QueueUserWorkItem(_ => DpiService.Start());
             // о новой версии узнаём в фоне; при снимке окна (--shot) в сеть не ходим
             if (ForceScale <= 0)
                 ThreadPool.QueueUserWorkItem(_ => { string v = Updates.Newer(Version); if (v != null) Ui(() => { update = v; Invalidate(); }); });
@@ -518,7 +843,7 @@ namespace HbAi.XboxDns
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { anim.Dispose(); fonts.Dispose(); }
+            if (disposing) { anim.Dispose(); fonts.Dispose(); DpiService.Stop(); }
             base.Dispose(disposing);
         }
 
@@ -689,7 +1014,7 @@ namespace HbAi.XboxDns
             if (bestNote != null) return bestNote;
             if (busy) return "Секунду";
             if (!active && stale) return "Через них нейросети не откроются. Нажмите кнопку — поставим рабочие";
-            return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] : "Обычный DNS от роутера или провайдера";
+            return active ? Dns.Name[dnsSet] + ": " + Dns.Opens[dnsSet] + " + YouTube, Discord" : "Обычный DNS от роутера или провайдера";
         }
 
         // выбор сервиса

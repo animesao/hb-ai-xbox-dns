@@ -159,8 +159,15 @@ enum Dns {
         return (cmds, list)
     }
 
-    static func enable(_ set: Int) -> String? { apply(set) }
-    static func disable() -> String? { apply(nil) }
+    static func enable(_ set: Int) -> String? {
+        let err = apply(set)
+        _ = DpiService.shared.start()
+        return err
+    }
+    static func disable() -> String? {
+        DpiService.shared.stop()
+        return apply(nil)
+    }
 
     /// nil — всё хорошо, иначе текст ошибки для окна.
     private static func apply(_ set: Int?) -> String? {
