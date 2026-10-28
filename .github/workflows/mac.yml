@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Тег релиза для прикрепления архива (например, v1.23, оставьте пустым для обычной сборки)'
+        description: 'Тег релиза для прикрепления архива (например, v1.25)'
         required: false
-        default: ''
+        default: 'v1.25'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Swift version
