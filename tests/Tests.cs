@@ -237,6 +237,15 @@ namespace HbAi.XboxDns
                 Eq(Probe.Blocked, Probe.Classify("HTTP/1.1 302\r\nLocation: /Unsupported-Country\r\n\r\n")));
         }
 
+        static void Render(Form f, Bitmap b)
+        {
+            using (var g = Graphics.FromImage(b))
+            {
+                var m = f.GetType().GetMethod("OnPaint", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (m != null) m.Invoke(f, new object[] { new PaintEventArgs(g, new Rectangle(0, 0, b.Width, b.Height)) });
+            }
+        }
+
         // ---------- новая версия ----------
 
         static void NewVersion()
@@ -260,9 +269,9 @@ namespace HbAi.XboxDns
                 using (var plain = new Bitmap(440, 898))
                 using (var upd = new Bitmap(440, 898))
                 {
-                    f.DrawToBitmap(plain, new Rectangle(0, 0, 440, 898));
+                    Render(f, plain);
                     typeof(MainForm).GetField("update", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(f, "1.23");
-                    f.DrawToBitmap(upd, new Rectangle(0, 0, 440, 898));
+                    Render(f, upd);
                     // середина кнопки: была фиолетовой, стала жёлтой
                     Eq(true, plain.GetPixel(60, 796).B > 200, "до:");
                     Eq(true, upd.GetPixel(60, 796).R > 200 && upd.GetPixel(60, 796).B < 150, "после:");
